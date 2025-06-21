@@ -3,10 +3,6 @@
 [Dual AI Chat](https://aistudio.google.com/app/prompts?state=%7B%22ids%22:%5B%221wS-wmXT_J4S-sfYxY1wItwh4UuV4STEk%22%5D,%22action%22:%22open%22,%22userId%22:%22102038139080022776927%22,%22resourceKeys%22:%7B%7D%7D)
 ---
 
-### ✨ 见证我们的成长 | Witness Our Growth
-
-**每一个 Star 都是我们前进的燃料！如果您觉得这个项目有帮助，请点亮一颗星支持我们。**
-
 [![Star History Chart](https://api.star-history.com/svg?repos=yeahhe365/Dual-AI-Chat&type=Date)](https://star-history.com/#yeahhe365/Dual-AI-Chat&Date)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -16,6 +12,10 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-blue?logo=tailwindcss)](https://tailwindcss.com/)
 
 一个先进的聊天应用，演示了一种独特的对话范式：用户的查询首先由两个不同的人工智能角色进行辩论和提炼，然后才提供最终的综合答案。该项目利用 Google Gemini API 驱动一个逻辑型 AI (Cognito) 和一个怀疑型 AI (Muse)，它们协作生成更健壮、准确和经过严格审查的响应。
+
+### ✨ 见证我们的成长 | Witness Our Growth
+
+**每一个 Star 都是我们前进的燃料！如果您觉得这个项目有帮助，请点亮一颗星支持我们。**
 
 ### ✨ 应用截图 (Application Screenshot)
 
