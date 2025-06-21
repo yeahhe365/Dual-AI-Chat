@@ -1,3 +1,9 @@
+### ✨ 见证我们的成长 | Witness Our Growth
+
+**每一个 Star 都是我们前进的燃料！如果您觉得这个项目有帮助，请点亮一颗星支持我们。**
+
+![Star History Chart](./public/star-history.svg)
+
 [Dual AI Chat](https://aistudio.google.com/app/prompts?state=%7B%22ids%22:%5B%221wS-wmXT_J4S-sfYxY1wItwh4UuV4STEk%22%5D,%22action%22:%22open%22,%22userId%22:%22102038139080022776927%22,%22resourceKeys%22:%7B%7D%7D)
 ---
 
