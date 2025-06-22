@@ -16,7 +16,7 @@
 
 ### ✨ 应用截图 (Application Screenshot)
 
-![PixPin_2025-06-21_11-16-54](https://github.com/user-attachments/assets/da49af58-274d-47b9-8ac0-7d8ea03cf642)
+![PixPin_2025-06-23_00-36-07](https://github.com/user-attachments/assets/a862f8c8-2da4-406c-a0db-269ff52138bc)
 
 ## 核心功能 (Core Features)
 
