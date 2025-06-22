@@ -55,46 +55,6 @@
 -   **图标 (Icons):** [Lucide React](https://lucide.dev/)
 -   **Markdown 处理 (Markdown Processing):** [Marked](https://marked.js.org/) & [DOMPurify](https://github.com/cure53/DOMPurify)
 
-## 🚀 本地运行 (Running Locally)
-
-请按照以下步骤在您的本地机器上设置和运行此项目。
-
-### 1. 先决条件 (Prerequisites)
-
--   [Node.js](https://nodejs.org/) (推荐 v18 或更高版本)
--   [npm](https://www.npmjs.com/) (或 yarn/pnpm)
-
-### 2. 安装 (Installation)
-
-1.  **克隆仓库 (Clone the repository):**
-    ```bash
-    git clone https://github.com/your-username/dual-ai-chat.git
-    cd dual-ai-chat
-    ```
-
-2.  **安装开发依赖 (Install dev dependencies):**
-    ```bash
-    npm install
-    ```
-
-3.  **设置环境变量 (Set up environment variables):**
-    -   从 [Google AI Studio](https://aistudio.google.com/app/apikey) 获取您的 Gemini API 密钥。
-    -   在项目根目录下创建一个名为 `.env.local` 的新文件。
-    -   将您的 API 密钥添加到该文件中，如下所示：
-
-    **.env.local**
-    ```
-    GEMINI_API_KEY=YOUR_API_KEY_HERE
-    ```
-    > **注意:** 项目的 Vite 配置会读取此 `GEMINI_API_KEY` 变量。它已被 `.gitignore` 忽略，以防您意外地提交您的密钥。
-
-### 3. 运行应用 (Run the App)
-
--   启动本地开发服务器：
-    ```bash
-    npm run dev
-    ```
--   在浏览器中打开 Vite 提示的 URL (通常是 `http://localhost:5173`)。
 
 ## 📁 项目结构 (Project Structure)
 
