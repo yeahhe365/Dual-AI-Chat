@@ -1,3 +1,6 @@
+`标签将这份草案放入记事本。
+
+<np-replace-all>
 # Dual AI Chat
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,15 +11,8 @@
 
 一个先进的聊天应用，演示了一种独特的对话范式：用户的查询首先由两个不同的人工智能角色进行辩论和提炼，然后才提供最终的综合答案。该项目利用 Google Gemini API 驱动一个逻辑型 AI (Cognito) 和一个怀疑型 AI (Muse)，它们协作生成更健壮、准确和经过严格审查的响应。
 
-### ✨ 见证我们的成长 | Witness Our Growth
-
-**每一个 Star 都是我们前进的燃料！如果您觉得这个项目有帮助，请点亮一颗星支持我们。**
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yeahhe365/Dual-AI-Chat&type=Date)](https://star-history.com/#yeahhe365/Dual-AI-Chat&Date)
-
 ### ✨ 应用截图 (Application Screenshot)
-
-![PixPin_2025-06-23_00-36-07](https://github.com/user-attachments/assets/a862f8c8-2da4-406c-a0db-269ff52138bc)
+![Application Screenshot](https://github.com/user-attachments/assets/a862f8c8-2da4-406c-a0db-269ff52138bc)
 
 ## 核心功能 (Core Features)
 
@@ -34,24 +30,23 @@
 
 该应用的核心是一个结构化的、多步骤的提示链，旨在模拟一个严谨的审查过程：
 ```
-
 1. 👤 用户输入 (文本 + 可选图片)
-    │
-    └──> 🤖 Cognito: 进行初步分析，并向 Muse 提出观点。
-    │
-    └──> 💬 内部讨论循环 (Internal Discussion Loop):
-    │
-    ├──> 🤖 Muse: 挑战假设、质疑逻辑并探索替代方案。
-    │
-    └──> 🤖 Cognito: 以逻辑论证和支持数据回应挑战。
-    │
-    * (此循环根据配置的“讨论模式”重复进行)
-    │
-    └──> 🤖 Cognito: 综合整个讨论和记事本内容，形成最终的、全面的答案。
-    │
-    └──> 👤 用户接收最终答案
-
+   │
+   └──> 🤖 Cognito: 进行初步分析，并向 Muse 提出观点。
+   │
+   └──> 💬 内部讨论循环 (Internal Discussion Loop):
+   │   │
+   │   ├──> 🤖 Muse: 挑战假设、质疑逻辑并探索替代方案。
+   │   │
+   │   └──> 🤖 Cognito: 以逻辑论证和支持数据回应挑战。
+   │
+   * (此循环根据配置的“讨论模式”重复进行)
+   │
+   └──> 🤖 Cognito: 综合整个讨论和记事本内容，形成最终的、全面的答案。
+   │
+   └──> 👤 用户接收最终答案
 ```
+
 ## 🛠️ 技术栈 (Tech Stack)
 
 -   **前端框架 (Frontend Framework):** [React](https://react.dev/) 19
@@ -84,7 +79,6 @@
     ```bash
     npm install
     ```
-    > **注意:** 项目的主要依赖项（如React）是通过 Import Map 在浏览器中加载的，`npm install` 主要用于安装开发工具（如 Vite 和 TypeScript）。
 
 3.  **设置环境变量 (Set up environment variables):**
     -   从 [Google AI Studio](https://aistudio.google.com/app/apikey) 获取您的 Gemini API 密钥。
@@ -105,45 +99,28 @@
     ```
 -   在浏览器中打开 Vite 提示的 URL (通常是 `http://localhost:5173`)。
 
-## ⚙️ 配置与使用 (Configuration & Usage)
-
-应用顶部的工具栏提供了多个控件，以定制 AI 的行为：
-
--   **模型 (Model):** 从下拉列表中选择用于整个对话的 Gemini 模型。
--   **轮数 (Turns):**
-    -   **固定 (Fixed):** AI 将进行固定轮次的内部讨论（可在旁边的输入框中设置）。
-    -   **不固定 (AI-Driven):** AI 将持续辩论，直到双方都认为主题已充分探讨并发出结束信号。
--   **预算 (Budget):**
-    -   **优质 (Quality):** 为支持此功能的模型启用 `thinkingBudget`，分配更多资源进行深度思考，这通常会以延迟为代价产生更高质量的响应。
-    -   **标准 (Standard):** 使用 API 的默认设置，以获得更快、更经济的响应。
-
 ## 📁 项目结构 (Project Structure)
 
 项目遵循一个清晰的、面向功能的结构，旨在分离关注点。
-```
 
+```
 /
 ├── src/
-│   ├── components/          # 共享的 React 组件 (UI 构建块)
-│   │   ├── ChatInput.tsx    # 处理用户输入、图片上传和提交逻辑
-│   │   ├── LoadingSpinner.tsx # 加载动画组件
-│   │   ├── MessageBubble.tsx  # 显示单条聊天消息（用户或AI）
-│   │   └── Notepad.tsx      # 共享记事本 UI 组件
-│   │
+│   ├── components/          # 共享的 React 组件
+│   ├── hooks/               # 自定义 React hooks 业务逻辑
 │   ├── services/            # 外部服务集成
-│   │   └── geminiService.ts # 封装与 Google Gemini API 的所有通信
-│   │
-│   ├── App.tsx              # 主应用组件，管理状态、UI和核心对话流程
+│   ├── utils/               # 辅助函数和工具
+│   ├── App.tsx              # 主应用组件
 │   ├── constants.ts         # 存放系统提示、模型ID和其它配置常量
 │   ├── index.tsx            # React 应用的入口点
 │   └── types.ts             # 全局 TypeScript 类型定义
 │
 ├── .env.local               # 本地环境变量 (用于 API 密钥)
-├── index.html               # 应用的 HTML 入口，包含 importmap 和 CDN 链接
+├── index.html               # 应用的 HTML 入口
 ├── package.json             # 项目依赖和脚本
-└── ...                      # 其他配置文件 (vite, tsconfig, etc.)
-
+└── ...                      # 其他配置文件
 ```
+
 ## 📄 许可证 (License)
 
 该项目采用 [MIT 许可证](LICENSE)授权。
