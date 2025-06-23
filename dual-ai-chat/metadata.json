@@ -1,0 +1,6 @@
+{
+  "name": "Dual AI Chat",
+  "description": "A chat application where user messages are discussed by two AI models (Cognito and Muse). Features a shared notepad that both AIs can read from and write to, with the entire conversation and notepad changes displayed.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

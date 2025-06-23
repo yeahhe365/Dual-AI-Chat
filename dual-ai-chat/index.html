@@ -1,0 +1,220 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dual AI Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom scrollbar for webkit browsers - Light Theme */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #e5e7eb; /* gray-200 */
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #9ca3af; /* gray-400 */
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #6b7280; /* gray-500 */
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      font-size: 1.25rem; /* Approx 20px if html base is 16px. This will be scaled by JS for root font size changes. */
+      line-height: 1.6;    /* Adjusted line height */
+    }
+
+    /* Styles for modal content scrollbar if needed */
+    .settings-modal-content-scrollbar::-webkit-scrollbar {
+      width: 6px; /* Slightly thinner for modal content */
+    }
+    .settings-modal-content-scrollbar::-webkit-scrollbar-track {
+        background: #f9fafb; /* gray-50, lighter for modal content area */
+    }
+    .settings-modal-content-scrollbar::-webkit-scrollbar-thumb {
+        background: #d1d5db; /* gray-300 */
+    }
+    .settings-modal-content-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af; /* gray-400 */
+    }
+
+
+    /* Light theme styles for Markdown preview in Notepad */
+    .markdown-preview {
+      padding: 0.75rem; /* p-3 */
+      color: #374151; /* text-gray-700 */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* font-mono */
+      font-size: 1.25rem; /* text-xl, approx 20px. Will scale based on root font size. */
+      line-height: 1.625; /* leading-relaxed */
+      background-color: #f9fafb; /* bg-gray-50 */
+      height: 100%;
+      overflow-y: auto;
+    }
+    .markdown-preview h1,
+    .markdown-preview h2,
+    .markdown-preview h3,
+    .markdown-preview h4,
+    .markdown-preview h5,
+    .markdown-preview h6 {
+      color: #0284c7; /* A darker sky blue for headings text-sky-600 */
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+    }
+    .markdown-preview h1 { font-size: 1.875em; } /* Relative to 1.25rem */
+    .markdown-preview h2 { font-size: 1.5em; }   /* Relative to 1.25rem */
+    .markdown-preview h3 { font-size: 1.25em; }  /* Relative to 1.25rem */
+    .markdown-preview p {
+      margin-bottom: 0.75em;
+      color: #4b5563; /* text-gray-600 */
+    }
+    .markdown-preview ul,
+    .markdown-preview ol {
+      margin-left: 1.5em;
+      margin-bottom: 0.75em;
+      list-style-position: outside;
+      color: #4b5563; /* text-gray-600 */
+    }
+    .markdown-preview ul { list-style-type: disc; }
+    .markdown-preview ol { list-style-type: decimal; }
+    .markdown-preview li { margin-bottom: 0.25em; }
+    .markdown-preview blockquote {
+      border-left: 4px solid #d1d5db; /* border-gray-300 */
+      padding-left: 1em;
+      margin-left: 0;
+      margin-bottom: 0.75em;
+      color: #6b7280; /* text-gray-500 */
+      font-style: italic;
+    }
+    .markdown-preview pre {
+      background-color: #f3f4f6; /* bg-gray-100 */
+      padding: 0.75em;
+      border-radius: 0.375rem; /* rounded-md */
+      overflow-x: auto;
+      margin-bottom: 0.75em;
+      color: #1f2937; /* text-gray-800 */
+      border: 1px solid #e5e7eb; /* border-gray-200 */
+    }
+    .markdown-preview code { /* Inline code */
+      background-color: #e5e7eb; /* bg-gray-200 */
+      color: #c026d3; /* A generic darker pink/purple for inline code */
+      padding: 0.2em 0.4em;
+      border-radius: 0.25rem;
+      font-size: 0.9em; /* Relative to 1.25rem of .markdown-preview */
+    }
+    .markdown-preview pre code { /* Code within pre blocks */
+      background-color: transparent;
+      padding: 0;
+      font-size: 1em; /* Relative to parent pre, which inherits from .markdown-preview */
+      color: inherit;
+    }
+    .markdown-preview a {
+      color: #0369a1; /* text-sky-700 */
+      text-decoration: underline;
+    }
+    .markdown-preview hr {
+      border-top: 1px solid #d1d5db; /* border-gray-300 */
+      margin: 1em 0;
+    }
+
+    /* Light theme styles for Markdown content within chat bubbles */
+    .chat-markdown-content {
+      line-height: 1.625;
+    }
+    .chat-markdown-content h1,
+    .chat-markdown-content h2,
+    .chat-markdown-content h3,
+    .chat-markdown-content h4,
+    .chat-markdown-content h5,
+    .chat-markdown-content h6 {
+      color: #0c4a6e; /* sky-800, darker for chat bubble headings */
+      margin-top: 0.75em;
+      margin-bottom: 0.4em;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .chat-markdown-content h1 { font-size: 1.5em; }
+    .chat-markdown-content h2 { font-size: 1.3em; }
+    .chat-markdown-content h3 { font-size: 1.15em; }
+    .chat-markdown-content p {
+      margin-bottom: 0.65em;
+    }
+    .chat-markdown-content ul,
+    .chat-markdown-content ol {
+      margin-left: 1.25em;
+      margin-bottom: 0.65em;
+      list-style-position: outside;
+    }
+    .chat-markdown-content ul { list-style-type: disc; }
+    .chat-markdown-content ol { list-style-type: decimal; }
+    .chat-markdown-content li { margin-bottom: 0.2em; }
+    .chat-markdown-content blockquote {
+      border-left: 3px solid #9ca3af; /* border-gray-400 */
+      padding-left: 0.75em;
+      margin-left: 0;
+      margin-bottom: 0.65em;
+      color: #4b5563; /* text-gray-600 */
+      font-style: italic;
+    }
+    .chat-markdown-content pre {
+      background-color: #e5e7eb; /* gray-200, distinct from bubble */
+      padding: 0.65em;
+      border-radius: 0.25rem; /* rounded-sm */
+      overflow-x: auto;
+      margin-bottom: 0.65em;
+      color: #1f2937; /* text-gray-800 */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.875rem; /* text-sm relative to new body font-size. Will scale. */
+      border: 1px solid #d1d5db; /* border-gray-300 */
+    }
+    .chat-markdown-content code { /* Inline code */
+      background-color: #d1d5db; /* gray-300 */
+      color: #be185d; /* pink-700 */
+      padding: 0.15em 0.3em;
+      border-radius: 0.2rem;
+      font-size: 0.85em; 
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    .chat-markdown-content pre code { /* Code within pre blocks */
+      background-color: transparent;
+      padding: 0;
+      font-size: 1em;
+      color: inherit;
+    }
+    .chat-markdown-content a {
+      color: #0ea5e9; /* sky-500 */
+      text-decoration: underline;
+    }
+    .chat-markdown-content a:hover {
+      color: #0284c7; /* sky-600 */
+    }
+    .chat-markdown-content hr {
+      border-top: 1px solid #9ca3af; /* gray-400 */
+      margin: 0.75em 0;
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.0.1",
+    "lucide-react": "https://esm.sh/lucide-react@^0.511.0",
+    "marked": "https://esm.sh/marked@^13.0.2",
+    "dompurify": "https://esm.sh/dompurify@^3.1.6"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
