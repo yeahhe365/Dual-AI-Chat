@@ -7,8 +7,6 @@
 [![Vite](https://img.shields.io/badge/Vite-6.2-blue?logo=vite)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-blue?logo=tailwindcss)](https://tailwindcss.com/)
 
-[![Star History Chart](upload://g5bFAELwAfF2IjicZWvZl7xsBSc.svg)](https://star-history.com/#yeahhe365/Dual-AI-Chat&Date)
-
 
 该项目利用可插拔的 AI 后端（默认为 Google Gemini API，并支持任何与 OpenAI 兼容的 API），驱动一个逻辑型 AI (Cognito) 和一个怀疑型 AI (Muse)，它们协作生成更健壮、准确和经过严格审查的响应。
 
