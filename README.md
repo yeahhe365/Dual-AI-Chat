@@ -7,12 +7,13 @@
 [![Vite](https://img.shields.io/badge/Vite-6.2-blue?logo=vite)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-blue?logo=tailwindcss)](https://tailwindcss.com/)
 
-**重要提示：** 这是一个**演示应用程序 (Demo)**，旨在展示一种独特的对话范式。用户的查询首先由两个不同的人工智能角色进行辩论和提炼，然后才提供最终的综合答案。
+[![Star History Chart](upload://g5bFAELwAfF2IjicZWvZl7xsBSc.svg)](https://star-history.com/#yeahhe365/Dual-AI-Chat&Date)
+
 
 该项目利用可插拔的 AI 后端（默认为 Google Gemini API，并支持任何与 OpenAI 兼容的 API），驱动一个逻辑型 AI (Cognito) 和一个怀疑型 AI (Muse)，它们协作生成更健壮、准确和经过严格审查的响应。
 
 ### ✨ 应用截图 (Application Screenshot)
-![Application Screenshot](https://github.com/user-attachments/assets/a862f8c8-2da4-406c-a0db-269ff52138bc)
+![PixPin_2025-06-23_18-47-52](https://github.com/user-attachments/assets/5991a065-1e08-4b7e-959c-146e1a9c2552)
 
 ## 核心功能 (Core Features)
 
