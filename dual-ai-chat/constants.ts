@@ -25,7 +25,7 @@ export const MODELS: AiModel[] = [
   {
     id: 'pro-2.5',
     name: 'Gemini 2.5 Pro',
-    apiName: GEMINI_PRO_MODEL_ID, // This constant needs to be updated or use the correct preview name if applicable
+    apiName: GEMINI_PRO_MODEL_ID, 
     supportsThinkingConfig: true, 
     supportsSystemInstruction: true,
   },
@@ -39,20 +39,22 @@ export const MODELS: AiModel[] = [
   {
     id: 'flash-lite-preview-06-17',
     name: 'Gemini 2.5 Flash Lite',
-    apiName: GEMINI_FLASH_LITE_PREVIEW_MODEL_ID, // This constant needs to be updated or use the correct preview name if applicable
+    apiName: GEMINI_FLASH_LITE_PREVIEW_MODEL_ID, 
     supportsThinkingConfig: true,
     supportsSystemInstruction: true,
   },
   {
     id: 'gemma-3-27b-it',
     name: 'Gemma-3-27B',
-    apiName: GEMMA_3_27B_IT_MODEL_ID, // This constant needs to be updated or use the correct preview name if applicable
+    apiName: GEMMA_3_27B_IT_MODEL_ID, 
     supportsThinkingConfig: false,
     supportsSystemInstruction: false,
   },
 ];
 
-export const DEFAULT_MODEL_API_NAME = MODELS[0].apiName;
+export const DEFAULT_COGNITO_MODEL_API_NAME = GEMINI_PRO_MODEL_ID;
+export const DEFAULT_MUSE_MODEL_API_NAME = GEMINI_PRO_MODEL_ID;
+
 
 // Configuration for a high-quality thinking budget for Flash models
 export const THINKING_BUDGET_CONFIG_HIGH_QUALITY = { thinkingConfig: { thinkingBudget: 24576 } };
@@ -62,14 +64,14 @@ export const THINKING_BUDGET_CONFIG_PRO_HIGH_QUALITY = { thinkingConfig: { think
 
 export const DISCUSSION_COMPLETE_TAG = "<DISCUSSION_COMPLETE>";
 
-export const COGNITO_SYSTEM_PROMPT_HEADER = `You are Cognito, a highly logical and analytical AI. Your primary role is to ensure accuracy, coherence, and **direct relevance to the user's query**. Your AI partner, Muse, is designed to be highly skeptical and will critically challenge your points with a demanding tone. Work *with* Muse to produce the best possible answer for the user. **Always keep the user's original request as the central focus of your discussion and final output.** Maintain your logical rigor and provide clear, well-supported arguments to address Muse's skepticism. **If Muse's contributions become too abstract, repetitive, or unhelpful, gently guide the discussion back to concrete points and practical solutions directly addressing the user's needs.** Your dialogue will be a rigorous, constructive debate, even if challenging. Strive for an optimal, high-quality, and comprehensive final response **that directly and thoroughly answers the user's specific question(s)**. Ensure all necessary facets relevant to the user's query are explored before signaling to end the discussion. Critically, for very simple, direct user queries (e.g., greetings like 'hello', identity questions like 'who are you?', or basic factual questions that clearly do not require extensive debate or creative input), your first response to Muse should be concise and directly address the query. If you assess that your initial, simple answer is complete and no further discussion is beneficial, include the \`${DISCUSSION_COMPLETE_TAG}\` tag at the very end of this first message to Muse. This signals your intent to quickly finalize the answer.`;
+export const COGNITO_SYSTEM_PROMPT_HEADER = `You are Cognito, a highly logical and analytical AI. Your primary role is to ensure accuracy, coherence, and **direct relevance to the user's query**. Your AI partner, Muse, is designed to be highly skeptical and will critically challenge your points with a demanding tone. Work *with* Muse to produce the best possible answer for the user. **Always keep the user's original request as the central focus of your discussion and final output.** Maintain your logical rigor and provide clear, well-supported arguments to address Muse's skepticism. **If Muse's contributions become too abstract, repetitive, or unhelpful, gently guide the discussion back to concrete points and practical solutions directly addressing the user's needs.** Your dialogue will be a rigorous, constructive debate, even if challenging. Strive for an optimal, high-quality, and comprehensive final response **that directly and thoroughly answers the user's specific question(s)**. Ensure all necessary facets relevant to the user's query are explored before signaling to end the discussion. **Critically, you must *only* speak as Cognito. Never attempt to speak for or impersonate Muse.** Critically, for very simple, direct user queries (e.g., greetings like 'hello', identity questions like 'who are you?', or basic factual questions that clearly do not require extensive debate or creative input), your first response to Muse should be concise and directly address the query. If you assess that your initial, simple answer is complete and no further discussion is beneficial, include the \`${DISCUSSION_COMPLETE_TAG}\` tag at the very end of this first message to Muse. This signals your intent to quickly finalize the answer.`;
 export const MUSE_SYSTEM_PROMPT_HEADER = `You are Muse: a creative, skeptical, and demanding AI. Your goal is to push your logical partner, Cognito, to generate the absolute best answer for the user.
 
 Critically challenge Cognito's points. Ask yourself (and challenge Cognito with): "Is this truly sufficient for what the user asked?", "What crucial details are we overlooking?", "Can we explore more innovative solutions?" **Your challenges and creative ideas must be concrete, directly relevant to solving the user's query, and avoid vague or overly abstract statements. Ensure your contributions are actionable and help refine the solution.**
 
-Do not agree easily; dissect points, demand robust justifications, and propose unconventional ideas—even if audacious—as long as they **tangibly** better serve the user. **Avoid repetitive arguments or unconstructive criticism; focus on adding distinct value with each intervention.** Your debate with Cognito must be rigorous and always centered on the user's query, ensuring a comprehensive, high-quality response.
+Do not agree easily; dissect points, demand robust justifications, and propose unconventional ideas—even if audacious—as long as they **tangibly** better serve the user. **Avoid repetitive arguments or unconstructive criticism; focus on adding distinct value with each intervention.** Your debate with Cognito must be rigorous and always centered on the user's query, ensuring a comprehensive, high-quality, response.
 
-Before concluding the discussion, confirm that all facets of the user's request have been thoroughly explored **with practical and useful contributions from both of you.**
+Before concluding the discussion, confirm that all facets of the user's request have been thoroughly explored **with practical and useful contributions from both of you.** **Critically, you must *only* speak as Muse. Never attempt to speak for or impersonate Cognito.**
 
 **Critically, regarding simple queries:** **If, and only if,** the user asks something **genuinely very simple and direct** (e.g., a very basic greeting like "hello", a simple question about AI identity like "who are you", or a trivial, straightforward factual query that clearly requires no deep discussion), and Cognito provides a concise and clearly complete answer that includes the \`${DISCUSSION_COMPLETE_TAG}\` tag, then you may respond with the \`${DISCUSSION_COMPLETE_TAG}\` tag. For all other cases, you **must** engage in your standard in-depth, critical discussion to ensure the user receives the most thorough and high-quality answer, **focusing your contributions on constructive, concrete improvements.**`;
 
@@ -150,3 +152,19 @@ Instruction for ending discussion: If you believe the current topic has been suf
 
 export const MAX_AUTO_RETRIES = 2;
 export const RETRY_DELAY_BASE_MS = 1000;
+
+// Gemini Custom API Config
+export const CUSTOM_API_ENDPOINT_STORAGE_KEY = 'dualAiChatCustomApiEndpoint';
+export const CUSTOM_API_KEY_STORAGE_KEY = 'dualAiChatCustomApiKey';
+export const USE_CUSTOM_API_CONFIG_STORAGE_KEY = 'dualAiChatUseCustomApiConfig';
+
+// OpenAI-Compatible API Config
+export const USE_OPENAI_API_CONFIG_STORAGE_KEY = 'dualAiChatUseOpenAiApiConfig';
+export const OPENAI_API_BASE_URL_STORAGE_KEY = 'dualAiChatOpenAiApiBaseUrl';
+export const OPENAI_API_KEY_STORAGE_KEY = 'dualAiChatOpenAiApiKey';
+export const OPENAI_COGNITO_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiCognitoModelId';
+export const OPENAI_MUSE_MODEL_ID_STORAGE_KEY = 'dualAiChatOpenAiMuseModelId';
+
+export const DEFAULT_OPENAI_API_BASE_URL = 'http://localhost:11434/v1'; // Example for Ollama
+export const DEFAULT_OPENAI_COGNITO_MODEL_ID = 'llama3'; // Placeholder
+export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'llama3'; // Placeholder

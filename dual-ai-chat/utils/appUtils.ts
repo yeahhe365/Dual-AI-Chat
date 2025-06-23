@@ -270,15 +270,34 @@ export const formatNotepadContentForAI = (content: string): string => {
 };
 
 export const getWelcomeMessageText = (
-  modelName: string,
+  cognitoModelNameFromDetails: string, // Actual name of Cognito's model from its details object
+  museModelNameFromDetails: string,    // Actual name of Muse's model from its details object
   currentDiscussionMode: DiscussionMode,
-  currentManualFixedTurns: number
+  currentManualFixedTurns: number,
+  isOpenAiActive: boolean,
+  openAiCognitoModelId?: string, // If OpenAI active, this is Cognito's OpenAI model ID
+  openAiMuseModelId?: string     // If OpenAI active, this is Muse's OpenAI model ID
 ): string => {
   let modeDescription = "";
-   if (currentDiscussionMode === DiscussionMode.FixedTurns) {
+  if (currentDiscussionMode === DiscussionMode.FixedTurns) {
     modeDescription = `固定轮次对话 (${currentManualFixedTurns}轮)`;
   } else {
     modeDescription = "AI驱动(不固定轮次)对话";
   }
-  return `欢迎使用Dual AI Chat！当前模式: ${modeDescription}。在下方输入您的问题或上传图片。${MessageSender.Cognito} 和 ${MessageSender.Muse} 将进行讨论，然后 ${MessageSender.Cognito} 会将最终答案呈现在右侧的记事本中。当前模型: ${modelName}`;
+
+  let modelInfo = "";
+  if (isOpenAiActive) {
+    const cognitoDisplay = openAiCognitoModelId || '未指定';
+    const museDisplay = openAiMuseModelId || '未指定';
+    if (cognitoDisplay === museDisplay) {
+        modelInfo = `OpenAI 模型: ${cognitoDisplay}`;
+    } else {
+        modelInfo = `OpenAI Cognito: ${cognitoDisplay}, OpenAI Muse: ${museDisplay}`;
+    }
+  } else {
+    // cognitoModelNameFromDetails and museModelNameFromDetails already contain the full Gemini model names
+    modelInfo = `Cognito 模型: ${cognitoModelNameFromDetails}, Muse 模型: ${museModelNameFromDetails}`;
+  }
+
+  return `欢迎使用Dual AI Chat！当前模式: ${modeDescription}。\n${modelInfo}.\n在下方输入您的问题或上传图片。${MessageSender.Cognito} 和 ${MessageSender.Muse} 将进行讨论，然后 ${MessageSender.Cognito} 会将最终答案呈现在右侧的记事本中。`;
 };

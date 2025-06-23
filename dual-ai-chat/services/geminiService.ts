@@ -1,37 +1,91 @@
 
 import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
 
-let ai: GoogleGenAI | null = null;
+// Helper to create a GoogleGenAI instance with potential custom fetch
+const createGoogleAIClient = (apiKey: string, customApiEndpoint?: string): GoogleGenAI => {
+  const clientOptions: ConstructorParameters<typeof GoogleGenAI>[0] = { apiKey };
 
-const initializeGoogleAI = (): GoogleGenAI => {
-  if (!process.env.API_KEY) {
-    console.error("API_KEY is not defined in environment variables.");
-    throw new Error("API_KEY 未配置。无法初始化 Gemini API。");
+  if (customApiEndpoint && customApiEndpoint.trim() !== '') {
+    clientOptions.fetch = async (url, init) => {
+      try {
+        const sdkUrl = new URL(url.toString());
+        // sdkUrl.pathname includes the leading slash e.g. /v1beta/models/..
+        // sdkUrl.search includes the leading question mark e.g. ?alt=json
+        // sdkUrl.hash includes the leading hash
+        const sdkPathAndQuery = sdkUrl.pathname + sdkUrl.search + sdkUrl.hash;
+
+        let basePath = customApiEndpoint.trim();
+        // Ensure basePath does not end with a slash
+        if (basePath.endsWith('/')) {
+          basePath = basePath.slice(0, -1);
+        }
+        // sdkPathAndQuery already starts with '/'
+        const finalUrl = basePath + sdkPathAndQuery;
+        return fetch(finalUrl, init);
+      } catch (e) {
+        console.error(
+          "Error constructing URL with custom endpoint. Using original SDK URL.",
+          e,
+          "Original URL:", url,
+          "Custom Endpoint:", customApiEndpoint
+        );
+        // Fallback to original URL if custom endpoint logic fails catastrophically
+        return fetch(url, init);
+      }
+    };
   }
-  if (!ai) {
-    ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  }
-  return ai;
+  return new GoogleGenAI(clientOptions);
 };
 
 interface GeminiResponsePayload {
   text: string;
   durationMs: number;
-  error?: string;
+  error?: string; // Standardized error key
 }
 
 export const generateResponse = async (
   prompt: string,
   modelName: string,
+  useCustomConfig: boolean, // New parameter to decide API config source
+  customApiKey?: string,
+  customApiEndpoint?: string,
   systemInstruction?: string,
-  imagePart?: { inlineData: { mimeType: string; data: string } }, // Optional image part
-  thinkingConfig?: { thinkingBudget: number } // Optional thinkingConfig
+  imagePart?: { inlineData: { mimeType: string; data: string } },
+  thinkingConfig?: { thinkingBudget: number }
 ): Promise<GeminiResponsePayload> => {
   const startTime = performance.now();
   try {
-    const genAI = initializeGoogleAI();
+    let apiKeyToUse: string | undefined;
+    let endpointForClient: string | undefined;
+    let missingKeyUserMessage = "";
+    let invalidKeyUserMessage = "API密钥无效或权限不足。请检查您的API密钥配置和权限。";
+
+
+    if (useCustomConfig) {
+      apiKeyToUse = customApiKey?.trim();
+      endpointForClient = customApiEndpoint; // createGoogleAIClient handles if it's empty/default
+      missingKeyUserMessage = "自定义API密钥未在设置中提供。请在设置中输入密钥，或关闭“使用自定义API配置”以使用环境变量。";
+      if (apiKeyToUse) { // If custom key is provided, tailor invalid message slightly
+        invalidKeyUserMessage = "提供的自定义API密钥无效或权限不足。请检查设置中的密钥。";
+      }
+    } else {
+      apiKeyToUse = process.env.API_KEY;
+      endpointForClient = undefined; // Ensures default Google endpoint is used by SDK
+      missingKeyUserMessage = "API密钥未在环境变量中配置。请配置该密钥，或在设置中启用并提供自定义API配置。";
+      if (apiKeyToUse) { // If env key is present, tailor invalid message
+         invalidKeyUserMessage = "环境变量中的API密钥无效或权限不足。请检查该密钥。";
+      }
+    }
+
+    if (!apiKeyToUse) {
+      console.error(missingKeyUserMessage);
+      // This specific error "API key not configured" will be checked by useChatLogic
+      return { text: missingKeyUserMessage, durationMs: performance.now() - startTime, error: "API key not configured" };
+    }
     
-    const configForApi: { 
+    const genAI = createGoogleAIClient(apiKeyToUse, endpointForClient);
+
+    const configForApi: {
       systemInstruction?: string;
       thinkingConfig?: { thinkingBudget: number };
     } = {};
@@ -49,7 +103,7 @@ export const generateResponse = async (
     if (imagePart) {
       requestContents = { parts: [imagePart, textPart] };
     } else {
-      requestContents = prompt; 
+      requestContents = prompt;
     }
 
     const response: GenerateContentResponse = await genAI.models.generateContent({
@@ -57,7 +111,7 @@ export const generateResponse = async (
       contents: requestContents,
       config: Object.keys(configForApi).length > 0 ? configForApi : undefined,
     });
-    
+
     const durationMs = performance.now() - startTime;
     return { text: response.text, durationMs };
   } catch (error) {
@@ -65,13 +119,36 @@ export const generateResponse = async (
     const durationMs = performance.now() - startTime;
     let errorMessage = "与AI通信时发生未知错误。";
     let errorType = "Unknown AI error";
+
+    // Default messages, might be overridden by specific checks
+    let specificMissingKeyMsg = "API密钥未配置。";
+    let specificInvalidKeyMsg = "API密钥无效或权限不足。";
+
+    if (useCustomConfig) {
+        specificMissingKeyMsg = "自定义API密钥未在设置中提供。";
+        specificInvalidKeyMsg = customApiKey?.trim() ? "提供的自定义API密钥无效或权限不足。" : specificMissingKeyMsg;
+    } else {
+        specificMissingKeyMsg = "API密钥未在环境变量中配置。";
+        specificInvalidKeyMsg = process.env.API_KEY ? "环境变量中的API密钥无效或权限不足。" : specificMissingKeyMsg;
+    }
+
+
     if (error instanceof Error) {
       errorMessage = `与AI通信时出错: ${error.message}`;
-      errorType = error.message;
-      if (error.message.includes('API key not valid')) {
-         errorMessage = "API密钥无效。请检查您的API密钥配置。";
-         errorType = "API key not valid";
+      errorType = error.name; 
+      // Error messages from GenAI lib can be generic, map them to our standardized types
+      if (error.message.includes('API key not valid') || 
+          error.message.includes('API_KEY_INVALID') || 
+          error.message.includes('permission-denied') || // Broader permission issue
+          (error.message.includes('forbidden') && error.message.toLowerCase().includes('api key'))) { // Another way an invalid key might present
+         errorMessage = specificInvalidKeyMsg;
+         errorType = "API key invalid or permission denied";
+      } else if (error.message.includes('Quota exceeded')) {
+        errorMessage = "API配额已超出。请检查您的Google AI Studio配额。";
+        errorType = "Quota exceeded";
       }
+      // The "API key not configured" case is handled before calling createGoogleAIClient
+      // and directly returned if apiKeyToUse is null/empty. This catch is for other errors.
     }
     return { text: errorMessage, durationMs, error: errorType };
   }

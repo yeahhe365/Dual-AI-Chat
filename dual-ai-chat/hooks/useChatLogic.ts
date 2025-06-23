@@ -1,11 +1,10 @@
 
 import { useState, useRef, useCallback } from 'react';
-import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, NotepadUpdatePayload, DiscussionMode } from '../types';
-import { generateResponse } from '../services/geminiService';
+import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode } from '../types'; 
+import { generateResponse as generateGeminiResponse } from '../services/geminiService';
+import { generateOpenAiResponse } from '../services/openaiService'; 
 import {
   AiModel,
-  COGNITO_SYSTEM_PROMPT_HEADER,
-  MUSE_SYSTEM_PROMPT_HEADER,
   NOTEPAD_INSTRUCTION_PROMPT_PART,
   DISCUSSION_COMPLETE_TAG,
   AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART,
@@ -14,33 +13,59 @@ import {
   THINKING_BUDGET_CONFIG_HIGH_QUALITY,
   THINKING_BUDGET_CONFIG_PRO_HIGH_QUALITY,
   GEMINI_PRO_MODEL_ID,
-  GEMINI_2_5_PRO_PREVIEW_05_06_MODEL_ID // Added import for the new model ID
+  GEMINI_2_5_PRO_PREVIEW_05_06_MODEL_ID
 } from '../constants';
 import { parseAIResponse, fileToBase64, ParsedAIResponse, formatNotepadContentForAI } from '../utils/appUtils';
 
 interface UseChatLogicProps {
   addMessage: (text: string, sender: MessageSender, purpose: MessagePurpose, durationMs?: number, image?: ChatMessage['image']) => string;
   processNotepadUpdateFromAI: (parsedResponse: ParsedAIResponse, sender: MessageSender, addSystemMessage: UseChatLogicProps['addMessage']) => void;
-  setIsApiKeyMissingState: (isMissing: boolean) => void;
-  currentModelDetails: AiModel;
-  selectedModelApiName: string;
+  setGlobalApiKeyStatus: (status: {isMissing?: boolean, isInvalid?: boolean, message?: string}) => void;
+  
+  cognitoModelDetails: AiModel; 
+  museModelDetails: AiModel;    
+  
+  // Gemini Custom Config
+  useCustomApiConfig: boolean; 
+  customApiKey: string; 
+  customApiEndpoint: string; 
+
+  // OpenAI Custom Config
+  useOpenAiApiConfig: boolean;
+  openAiApiKey: string;
+  openAiApiBaseUrl: string;
+  openAiCognitoModelId: string; 
+  openAiMuseModelId: string;    
+
+  // Shared Settings
   discussionMode: DiscussionMode;
   manualFixedTurns: number;
-  isThinkingBudgetActive: boolean;
+  isThinkingBudgetActive: boolean; 
   cognitoSystemPrompt: string;
   museSystemPrompt: string;
-  notepadContent: string; // Read-only access for prompt construction
+  notepadContent: string;
   startProcessingTimer: () => void;
   stopProcessingTimer: () => void;
-  currentQueryStartTimeRef: React.MutableRefObject<number | null>; // To check if timer is running
+  currentQueryStartTimeRef: React.MutableRefObject<number | null>;
 }
 
 export const useChatLogic = ({
   addMessage,
   processNotepadUpdateFromAI,
-  setIsApiKeyMissingState,
-  currentModelDetails,
-  selectedModelApiName,
+  setGlobalApiKeyStatus,
+  cognitoModelDetails, 
+  museModelDetails, 
+  // Gemini
+  useCustomApiConfig, 
+  customApiKey, 
+  customApiEndpoint, 
+  // OpenAI
+  useOpenAiApiConfig,
+  openAiApiKey,
+  openAiApiBaseUrl,
+  openAiCognitoModelId,
+  openAiMuseModelId,
+  // Shared
   discussionMode,
   manualFixedTurns,
   isThinkingBudgetActive,
@@ -57,86 +82,148 @@ export const useChatLogic = ({
   const cancelRequestRef = useRef<boolean>(false);
   const [currentDiscussionTurn, setCurrentDiscussionTurn] = useState<number>(0);
   const [isInternalDiscussionActive, setIsInternalDiscussionActive] = useState<boolean>(false);
+  const [lastCompletedTurnCount, setLastCompletedTurnCount] = useState<number>(0);
 
+  const getThinkingConfigForGeminiModel = useCallback((modelDetails: AiModel) : { thinkingBudget: number } | undefined => {
+    if (!useOpenAiApiConfig && modelDetails.supportsThinkingConfig && isThinkingBudgetActive) {
+      return (modelDetails.apiName === GEMINI_PRO_MODEL_ID || modelDetails.apiName === GEMINI_2_5_PRO_PREVIEW_05_06_MODEL_ID)
+        ? THINKING_BUDGET_CONFIG_PRO_HIGH_QUALITY.thinkingConfig
+        : THINKING_BUDGET_CONFIG_HIGH_QUALITY.thinkingConfig;
+    }
+    return undefined;
+  }, [useOpenAiApiConfig, isThinkingBudgetActive]);
 
-  const commonAIStepExecution = async (
+  const commonAIStepExecution = useCallback(async (
     stepIdentifier: string,
-    prompt: string,
-    modelName: string,
-    sender: MessageSender,
-    purpose: MessagePurpose,
-    systemInstruction?: string,
-    imageApiPart?: { inlineData: { mimeType: string; data: string } },
-    thinkingConfig?: { thinkingBudget: number },
-    // For retrying the whole flow if a step fails that needs these:
-    userInputForFlow?: string,
-    imageApiPartForFlow?: { inlineData: { mimeType: string; data: string } },
-    discussionLogBeforeFailure?: string[],
-    currentTurnIndexForResume?: number,
-    previousAISignaledStopForResume?: boolean
+    prompt: string, 
+    modelDetailsForStep: AiModel, 
+    senderForStep: MessageSender, 
+    purposeForStep: MessagePurpose,
+    imageApiPartForStep?: { inlineData: { mimeType: string; data: string } }, 
+    userInputForFlowContext?: string, 
+    imageApiPartForFlowContext?: { inlineData: { mimeType: string; data: string } }, 
+    discussionLogBeforeFailureContext?: string[],
+    currentTurnIndexForResumeContext?: number,
+    previousAISignaledStopForResumeContext?: boolean
   ): Promise<ParsedAIResponse> => {
     let stepSuccess = false;
     let parsedResponse: ParsedAIResponse | null = null;
     let autoRetryCount = 0;
+    
+    const systemInstructionToUse = senderForStep === MessageSender.Cognito ? cognitoSystemPrompt : museSystemPrompt;
+    const thinkingConfigToUseForGemini = getThinkingConfigForGeminiModel(modelDetailsForStep);
 
     while (autoRetryCount <= MAX_AUTO_RETRIES && !stepSuccess) {
       if (cancelRequestRef.current) throw new Error("用户取消操作");
       try {
-        const result = await generateResponse(prompt, modelName, systemInstruction, imageApiPart, thinkingConfig);
-        if (cancelRequestRef.current) throw new Error("用户取消操作");
-        if (result.error) {
-          if (result.error.includes("API key not valid")) {
-            const apiKeyError = Object.assign(new Error(result.text), { isApiKeyError: true });
-            setIsApiKeyMissingState(true);
-            addMessage(`错误: ${apiKeyError.message}`, MessageSender.System, MessagePurpose.SystemNotification);
-            throw apiKeyError;
-          }
-          throw new Error(result.text);
+        let result: { text: string; durationMs: number; error?: string };
+        
+                        // modelDetailsForStep.apiName will hold the specific OpenAI model ID 
+                        // (openAiCognitoModelId or openAiMuseModelId) due to how actualCognitoModelDetails/actualMuseModelDetails are constructed in App.tsx
+        const currentOpenAiModelId = modelDetailsForStep.apiName;
+
+
+        if (useOpenAiApiConfig) {
+          result = await generateOpenAiResponse(
+            prompt,
+            currentOpenAiModelId, 
+            openAiApiKey,
+            openAiApiBaseUrl,
+            modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined,
+            imageApiPartForStep ? { mimeType: imageApiPartForStep.inlineData.mimeType, data: imageApiPartForStep.inlineData.data } : undefined
+          );
+        } else { 
+          result = await generateGeminiResponse(
+            prompt,
+            modelDetailsForStep.apiName, 
+            useCustomApiConfig, 
+            customApiKey, 
+            customApiEndpoint, 
+            modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined,
+            imageApiPartForStep,
+            thinkingConfigToUseForGemini
+          );
         }
+
+        if (cancelRequestRef.current) throw new Error("用户取消操作");
+        
+        if (result.error) {
+          if (result.error === "API key not configured" || result.error.toLowerCase().includes("api key not provided")) {
+             setGlobalApiKeyStatus({isMissing: true, message: result.text}); 
+             throw new Error(result.text); 
+          }
+          if (result.error === "API key invalid or permission denied") {
+             setGlobalApiKeyStatus({isInvalid: true, message: result.text}); 
+             throw new Error(result.text);
+          }
+          throw new Error(result.text || "AI 响应错误");
+        }
+        setGlobalApiKeyStatus({isMissing: false, isInvalid: false, message: undefined }); 
         parsedResponse = parseAIResponse(result.text);
-        addMessage(parsedResponse.spokenText, sender, purpose, result.durationMs);
+        addMessage(parsedResponse.spokenText, senderForStep, purposeForStep, result.durationMs);
         stepSuccess = true;
       } catch (e) {
-        const error = e as Error & {isApiKeyError?: boolean};
-        if (error.isApiKeyError) throw error; // Propagate API key error immediately
+        const error = e as Error;
+        if (error.message.includes("API密钥") || error.message.toLowerCase().includes("api key")) {
+           throw error; 
+        }
 
         if (autoRetryCount < MAX_AUTO_RETRIES) {
-          addMessage(`[${sender} - ${stepIdentifier}] 调用失败，重试 (${autoRetryCount + 1}/${MAX_AUTO_RETRIES})... ${error.message}`, MessageSender.System, MessagePurpose.SystemNotification);
+          addMessage(`[${senderForStep} - ${stepIdentifier}] 调用失败，重试 (${autoRetryCount + 1}/${MAX_AUTO_RETRIES})... ${error.message}`, MessageSender.System, MessagePurpose.SystemNotification);
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_BASE_MS * (autoRetryCount + 1)));
         } else {
-          const errorMsgId = addMessage(`[${sender} - ${stepIdentifier}] 在 ${MAX_AUTO_RETRIES + 1} 次尝试后失败: ${error.message} 可手动重试。`, MessageSender.System, MessagePurpose.SystemNotification);
+          const errorMsgId = addMessage(`[${senderForStep} - ${stepIdentifier}] 在 ${MAX_AUTO_RETRIES + 1} 次尝试后失败: ${error.message} 可手动重试。`, MessageSender.System, MessagePurpose.SystemNotification);
+          
+          let thinkingConfigForPayload: {thinkingBudget: number} | undefined = undefined;
+          if (!useOpenAiApiConfig) { 
+            thinkingConfigForPayload = thinkingConfigToUseForGemini;
+          }
+
           setFailedStepInfo({
-            stepIdentifier, prompt, modelName, systemInstruction, imageApiPart, sender, purpose, originalSystemErrorMsgId: errorMsgId, thinkingConfig,
-            userInputForFlow: userInputForFlow || "", // Ensure defined
-            imageApiPartForFlow,
-            discussionLogBeforeFailure: discussionLogBeforeFailure || [], // Ensure defined
-            currentTurnIndexForResume,
-            previousAISignaledStopForResume
+            stepIdentifier: stepIdentifier, 
+            prompt: prompt, 
+            modelName: modelDetailsForStep.apiName, 
+            systemInstruction: modelDetailsForStep.supportsSystemInstruction ? systemInstructionToUse : undefined, 
+            imageApiPart: imageApiPartForStep, 
+            sender: senderForStep, 
+            purpose: purposeForStep, 
+            originalSystemErrorMsgId: errorMsgId, 
+            thinkingConfig: thinkingConfigForPayload,
+            userInputForFlow: userInputForFlowContext || "", 
+            imageApiPartForFlow: imageApiPartForFlowContext,
+            discussionLogBeforeFailure: discussionLogBeforeFailureContext || [], 
+            currentTurnIndexForResume: currentTurnIndexForResumeContext,
+            previousAISignaledStopForResume: previousAISignaledStopForResumeContext
           });
-          setIsInternalDiscussionActive(false); // Stop showing turn count if discussion leads to error
-          throw error; // Propagate error to stop current flow
+          setIsInternalDiscussionActive(false); 
+          throw error; 
         }
       }
       autoRetryCount++;
     }
     if (!parsedResponse) {
-        setIsInternalDiscussionActive(false); // Stop showing turn count
+        setIsInternalDiscussionActive(false); 
         throw new Error("AI响应处理失败");
     }
     return parsedResponse;
-  };
+  }, [
+      addMessage, cognitoSystemPrompt, museSystemPrompt, getThinkingConfigForGeminiModel, 
+      useOpenAiApiConfig, openAiApiKey, openAiApiBaseUrl, // openAiCognitoModelId & openAiMuseModelId are implicitly used via modelDetailsForStep.apiName
+      useCustomApiConfig, customApiKey, customApiEndpoint, 
+      setGlobalApiKeyStatus, setIsLoading, setIsInternalDiscussionActive
+    ]);
 
-  const continueDiscussionAfterSuccessfulRetry = async (
+  const continueDiscussionAfterSuccessfulRetry = useCallback(async (
     retriedStepPayload: FailedStepPayload,
     retryResponse: ParsedAIResponse
   ) => {
     const {
       stepIdentifier: retriedStepId,
       userInputForFlow,
-      imageApiPartForFlow,
+      imageApiPartForFlow, 
     } = retriedStepPayload;
 
-    let localDiscussionLog = [...retriedStepPayload.discussionLogBeforeFailure!]; // Assert as it's set in commonAIStepExecution failure
+    let localDiscussionLog = [...retriedStepPayload.discussionLogBeforeFailure!]; 
     localDiscussionLog.push(`${retriedStepPayload.sender}: ${retryResponse.spokenText}`);
     setDiscussionLog(localDiscussionLog);
 
@@ -145,16 +232,9 @@ export const useChatLogic = ({
     if (discussionMode === DiscussionMode.AiDriven && retriedStepPayload.previousAISignaledStopForResume && retryResponse.discussionShouldEnd) {
         localPreviousAISignaledStop = true;
     }
-
-    let activeThinkingConfig: { thinkingBudget: number } | undefined = undefined;
-    if (currentModelDetails.supportsThinkingConfig && isThinkingBudgetActive) {
-      activeThinkingConfig = (currentModelDetails.apiName === GEMINI_PRO_MODEL_ID || currentModelDetails.apiName === GEMINI_2_5_PRO_PREVIEW_05_06_MODEL_ID)
-        ? THINKING_BUDGET_CONFIG_PRO_HIGH_QUALITY.thinkingConfig
-        : THINKING_BUDGET_CONFIG_HIGH_QUALITY.thinkingConfig;
-    }
-
-    const effectiveCognitoSysInstruction = currentModelDetails.supportsSystemInstruction ? cognitoSystemPrompt : undefined;
-    const effectiveMuseSysInstruction = currentModelDetails.supportsSystemInstruction ? museSystemPrompt : undefined;
+    
+    const effectiveCognitoModel = cognitoModelDetails;
+    const effectiveMuseModel = museModelDetails;
 
     const imageInstructionForAI = imageApiPartForFlow ? "用户还提供了一张图片。请在您的分析和回复中同时考虑此图片和文本查询。" : "";
     const discussionModeInstructionText = discussionMode === DiscussionMode.AiDriven ? AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART : "";
@@ -165,14 +245,14 @@ export const useChatLogic = ({
 
     if (retriedStepId === 'cognito-initial-to-muse') {
         initialLoopTurn = 0;
-        setIsInternalDiscussionActive(true); // Discussion starts/resumes
+        setIsInternalDiscussionActive(true); 
         setCurrentDiscussionTurn(0);
         if (localPreviousAISignaledStop) addMessage(`${MessageSender.Cognito} 已建议结束讨论。等待 ${MessageSender.Muse} 的回应。`, MessageSender.System, MessagePurpose.SystemNotification);
     } else if (retriedStepId.startsWith('muse-reply-to-cognito-turn-')) {
         initialLoopTurn = retriedStepPayload.currentTurnIndexForResume ?? 0;
-        setIsInternalDiscussionActive(true); // Discussion continues
+        setIsInternalDiscussionActive(true); 
         setCurrentDiscussionTurn(initialLoopTurn);
-        skipMuseInFirstIteration = true; // Muse just responded, so Cognito's turn
+        skipMuseInFirstIteration = true; 
         if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop && retriedStepPayload.previousAISignaledStopForResume) {
             addMessage(`双方AI (${MessageSender.Cognito} 和 ${MessageSender.Muse}) 已同意结束讨论。`, MessageSender.System, MessagePurpose.SystemNotification);
              setIsInternalDiscussionActive(false);
@@ -181,8 +261,8 @@ export const useChatLogic = ({
         }
     } else if (retriedStepId.startsWith('cognito-reply-to-muse-turn-')) {
         initialLoopTurn = (retriedStepPayload.currentTurnIndexForResume ?? 0) + 1;
-        setIsInternalDiscussionActive(true); // Discussion continues for Muse's turn
-        setCurrentDiscussionTurn(initialLoopTurn); // Muse will start this turn
+        setIsInternalDiscussionActive(true); 
+        setCurrentDiscussionTurn(initialLoopTurn); 
          if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop && retriedStepPayload.previousAISignaledStopForResume) {
              addMessage(`双方AI (${MessageSender.Muse} 和 ${MessageSender.Cognito}) 已同意结束讨论。`, MessageSender.System, MessagePurpose.SystemNotification);
              setIsInternalDiscussionActive(false);
@@ -190,7 +270,7 @@ export const useChatLogic = ({
              addMessage(`${MessageSender.Cognito} 已建议结束讨论。等待 ${MessageSender.Muse} 的回应。`, MessageSender.System, MessagePurpose.SystemNotification);
         }
     } else if (retriedStepId === 'cognito-final-answer') {
-        setIsInternalDiscussionActive(false); // Final answer means discussion is over
+        setIsInternalDiscussionActive(false); 
         return;
     }
 
@@ -202,7 +282,7 @@ export const useChatLogic = ({
       }
       if (retriedStepId === 'cognito-final-answer') discussionLoopShouldRun = false;
 
-      if (discussionLoopShouldRun && isInternalDiscussionActive) { // ensure isInternalDiscussionActive is true before loop
+      if (discussionLoopShouldRun && isInternalDiscussionActive) { 
         for (let turn = initialLoopTurn; ; turn++) {
           setCurrentDiscussionTurn(turn);
           if (cancelRequestRef.current) break;
@@ -211,12 +291,12 @@ export const useChatLogic = ({
 
           if (!(skipMuseInFirstIteration && turn === initialLoopTurn)) {
             const museStepIdentifier = `muse-reply-to-cognito-turn-${turn}`;
-            addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-            let musePrompt = `${effectiveMuseSysInstruction ? effectiveMuseSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
-            if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) musePrompt += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
+            addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${effectiveMuseModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+            let musePromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+            if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) musePromptText += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
             const museParsedResponse = await commonAIStepExecution(
-                museStepIdentifier, musePrompt, selectedModelApiName, MessageSender.Muse, MessagePurpose.MuseToCognito, effectiveMuseSysInstruction, imageApiPartForFlow, activeThinkingConfig,
+                museStepIdentifier, musePromptText, effectiveMuseModel, MessageSender.Muse, MessagePurpose.MuseToCognito, imageApiPartForFlow,
                 userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop
             );
             if (cancelRequestRef.current) return;
@@ -241,12 +321,12 @@ export const useChatLogic = ({
 
 
           const cognitoReplyStepIdentifier = `cognito-reply-to-muse-turn-${turn}`;
-          addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-          let cognitoReplyPrompt = `${effectiveCognitoSysInstruction ? effectiveCognitoSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
-          if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) cognitoReplyPrompt += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
+          addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+          let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+          if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) cognitoReplyPromptText += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
           const cognitoReplyParsedResponse = await commonAIStepExecution(
-              cognitoReplyStepIdentifier, cognitoReplyPrompt, selectedModelApiName, MessageSender.Cognito, MessagePurpose.CognitoToMuse, effectiveCognitoSysInstruction, imageApiPartForFlow, activeThinkingConfig,
+              cognitoReplyStepIdentifier, cognitoReplyPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, imageApiPartForFlow,
               userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop
           );
           if (cancelRequestRef.current) return;
@@ -266,14 +346,14 @@ export const useChatLogic = ({
           if (cancelRequestRef.current) break;
         }
       }
-      setIsInternalDiscussionActive(false); // Ensure it's false after loop or if loop didn't run
+      setIsInternalDiscussionActive(false); 
 
       if (cancelRequestRef.current) return;
 
       const finalAnswerStepIdentifier = 'cognito-final-answer';
-      addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+      addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
 
-      const finalAnswerPrompt = `${effectiveCognitoSysInstruction ? effectiveCognitoSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${localDiscussionLog.join("\n")}
+      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${localDiscussionLog.join("\n")}
 
 **您的最终任务是为用户生成最终答案，并将其放入记事本中。**
 
@@ -286,32 +366,51 @@ export const useChatLogic = ({
 \n${commonPromptInstructions()}`;
 
       const finalAnswerParsedResponse = await commonAIStepExecution(
-          finalAnswerStepIdentifier, finalAnswerPrompt, selectedModelApiName, MessageSender.Cognito, MessagePurpose.FinalResponse, effectiveCognitoSysInstruction, imageApiPartForFlow, activeThinkingConfig,
+          finalAnswerStepIdentifier, finalAnswerPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.FinalResponse, imageApiPartForFlow,
           userInputForFlow, imageApiPartForFlow, [...localDiscussionLog]
       );
       if (cancelRequestRef.current) return;
       processNotepadUpdateFromAI(finalAnswerParsedResponse, MessageSender.Cognito, addMessage);
 
     } catch (error) {
-      const catchedError = error as Error & {isApiKeyError?: boolean};
-      if (cancelRequestRef.current && !catchedError.isApiKeyError) { /* User cancelled */ }
-      else if (!catchedError.isApiKeyError) {
-        console.error("继续讨论流程中发生错误:", catchedError);
+      const e = error as Error;
+      if (cancelRequestRef.current) { /* User cancelled */ }
+      else if (!e.message.includes("API密钥") && !e.message.toLowerCase().includes("api key")) { 
+        console.error("继续讨论流程中发生错误:", error);
       }
       setIsInternalDiscussionActive(false);
     } finally {
       if (!failedStepInfo || cancelRequestRef.current) {
          setIsLoading(false);
          stopProcessingTimer();
+         // Update last completed turn count on successful completion of a retried flow
+         if (!cancelRequestRef.current && !failedStepInfo) {
+            let completedTurns = 0;
+            if (discussionLog.length > 1) { // Check if discussion happened before final synthesis
+                if (discussionMode === DiscussionMode.FixedTurns) {
+                    completedTurns = manualFixedTurns;
+                } else {
+                    // currentDiscussionTurn reflects the last completed turn index in the loop
+                    completedTurns = currentDiscussionTurn + 1;
+                }
+            }
+            setLastCompletedTurnCount(completedTurns);
+        } else if (cancelRequestRef.current && !failedStepInfo) { // Cancelled during retry flow
+            setLastCompletedTurnCount(0); // Or decide to keep previous
+        }
       }
       if (cancelRequestRef.current && !failedStepInfo) {
         addMessage("用户已停止AI响应。", MessageSender.System, MessagePurpose.SystemNotification);
       }
       setIsInternalDiscussionActive(false);
     }
-  };
+  }, [
+      addMessage, commonAIStepExecution, processNotepadUpdateFromAI, setDiscussionLog, 
+      discussionMode, manualFixedTurns, cognitoModelDetails, museModelDetails, notepadContent, 
+      setIsLoading, stopProcessingTimer, failedStepInfo, setIsInternalDiscussionActive, currentDiscussionTurn, setLastCompletedTurnCount // Added currentDiscussionTurn and setLastCompletedTurnCount
+    ]);
 
-  const startChatProcessing = async (userInput: string, imageFile?: File | null) => {
+  const startChatProcessing = useCallback(async (userInput: string, imageFile?: File | null) => {
     if (isLoading) return;
     if (!userInput.trim() && !imageFile) return;
 
@@ -321,17 +420,18 @@ export const useChatLogic = ({
     setDiscussionLog([]);
     setCurrentDiscussionTurn(0);
     setIsInternalDiscussionActive(false);
+    setGlobalApiKeyStatus({}); 
     startProcessingTimer();
 
     let userImageForDisplay: ChatMessage['image'] | undefined = undefined;
-    let imageApiPart: { inlineData: { mimeType: string; data: string } } | undefined = undefined;
+    let geminiImageApiPart: { inlineData: { mimeType: string; data: string } } | undefined = undefined;
 
     if (imageFile) {
       try {
-        const dataUrl = URL.createObjectURL(imageFile);
+        const dataUrl = URL.createObjectURL(imageFile); 
         userImageForDisplay = { dataUrl, name: imageFile.name, type: imageFile.type };
-        const base64Data = await fileToBase64(imageFile);
-        imageApiPart = { inlineData: { mimeType: imageFile.type, data: base64Data } };
+        const base64Data = await fileToBase64(imageFile); 
+        geminiImageApiPart = { inlineData: { mimeType: imageFile.type, data: base64Data } };
       } catch (error) {
         console.error("图片处理失败:", error);
         addMessage("图片处理失败，请重试。", MessageSender.System, MessagePurpose.SystemNotification);
@@ -347,28 +447,21 @@ export const useChatLogic = ({
     let currentLocalDiscussionLog: string[] = [];
     let lastTurnTextForLog = "";
 
-    let activeThinkingConfig: { thinkingBudget: number } | undefined = undefined;
-    if (currentModelDetails.supportsThinkingConfig && isThinkingBudgetActive) {
-      activeThinkingConfig = (currentModelDetails.apiName === GEMINI_PRO_MODEL_ID || currentModelDetails.apiName === GEMINI_2_5_PRO_PREVIEW_05_06_MODEL_ID)
-        ? THINKING_BUDGET_CONFIG_PRO_HIGH_QUALITY.thinkingConfig
-        : THINKING_BUDGET_CONFIG_HIGH_QUALITY.thinkingConfig;
-    }
+    const effectiveCognitoModel = cognitoModelDetails; 
+    const effectiveMuseModel = museModelDetails;     
 
-    const effectiveCognitoSysInstruction = currentModelDetails.supportsSystemInstruction ? cognitoSystemPrompt : undefined;
-    const effectiveMuseSysInstruction = currentModelDetails.supportsSystemInstruction ? museSystemPrompt : undefined;
-
-    const imageInstructionForAI = imageApiPart ? "用户还提供了一张图片。请在您的分析和回复中同时考虑此图片和文本查询。" : "";
+    const imageInstructionForAI = geminiImageApiPart ? "用户还提供了一张图片。请在您的分析和回复中同时考虑此图片和文本查询。" : "";
     const discussionModeInstructionText = discussionMode === DiscussionMode.AiDriven ? AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART : "";
     const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText;
 
     try {
       const cognitoInitialStepIdentifier = 'cognito-initial-to-muse';
-      addMessage(`${MessageSender.Cognito} 正在为 ${MessageSender.Muse} 准备第一个观点 (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-      const cognitoPrompt = `${effectiveCognitoSysInstruction ? effectiveCognitoSysInstruction + " " : ""}${`用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 请针对此查询提供您的初步想法或分析，以便 ${MessageSender.Muse} (创意型AI) 可以回应并与您开始讨论。用中文回答。`}\n${commonPromptInstructions()}`;
+      addMessage(`${MessageSender.Cognito} 正在为 ${MessageSender.Muse} 准备第一个观点 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+      const cognitoPromptText = `${`用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 请针对此查询提供您的初步想法或分析，以便 ${MessageSender.Muse} (创意型AI) 可以回应并与您开始讨论。用中文回答。`}\n${commonPromptInstructions()}`;
 
       const cognitoParsedResponse = await commonAIStepExecution(
-          cognitoInitialStepIdentifier, cognitoPrompt, selectedModelApiName, MessageSender.Cognito, MessagePurpose.CognitoToMuse, effectiveCognitoSysInstruction, imageApiPart, activeThinkingConfig,
-          userInput, imageApiPart, []
+          cognitoInitialStepIdentifier, cognitoPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, geminiImageApiPart,
+          userInput, geminiImageApiPart, [] 
       );
       if (cancelRequestRef.current) throw new Error("用户取消操作");
       processNotepadUpdateFromAI(cognitoParsedResponse, MessageSender.Cognito, addMessage);
@@ -376,8 +469,8 @@ export const useChatLogic = ({
       currentLocalDiscussionLog.push(`${MessageSender.Cognito}: ${lastTurnTextForLog}`);
       setDiscussionLog([...currentLocalDiscussionLog]);
 
-      setIsInternalDiscussionActive(true); // Discussion begins AFTER Cognito's first message to Muse
-      setCurrentDiscussionTurn(0); // Start of turn 0 (first exchange)
+      setIsInternalDiscussionActive(true); 
+      setCurrentDiscussionTurn(0); 
 
       let previousAISignaledStop = discussionMode === DiscussionMode.AiDriven && (cognitoParsedResponse.discussionShouldEnd || false);
       if (previousAISignaledStop) addMessage(`${MessageSender.Cognito} 已建议结束讨论。等待 ${MessageSender.Muse} 的回应。`, MessageSender.System, MessagePurpose.SystemNotification);
@@ -388,13 +481,13 @@ export const useChatLogic = ({
         if (discussionMode === DiscussionMode.FixedTurns && turn >= manualFixedTurns) break;
 
         const museStepIdentifier = `muse-reply-to-cognito-turn-${turn}`;
-        addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-        let musePrompt = `${effectiveMuseSysInstruction ? effectiveMuseSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
-        if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) musePrompt += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
+        addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${effectiveMuseModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+        let musePromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+        if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) musePromptText += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
         const museParsedResponse = await commonAIStepExecution(
-            museStepIdentifier, musePrompt, selectedModelApiName, MessageSender.Muse, MessagePurpose.MuseToCognito, effectiveMuseSysInstruction, imageApiPart, activeThinkingConfig,
-            userInput, imageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
+            museStepIdentifier, musePromptText, effectiveMuseModel, MessageSender.Muse, MessagePurpose.MuseToCognito, geminiImageApiPart,
+            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
         );
         if (cancelRequestRef.current) break;
         processNotepadUpdateFromAI(museParsedResponse, MessageSender.Muse, addMessage);
@@ -415,13 +508,13 @@ export const useChatLogic = ({
         if (discussionMode === DiscussionMode.FixedTurns && turn >= manualFixedTurns -1) { setIsInternalDiscussionActive(false); break; }
 
         const cognitoReplyStepIdentifier = `cognito-reply-to-muse-turn-${turn}`;
-        addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-        let cognitoReplyPrompt = `${effectiveCognitoSysInstruction ? effectiveCognitoSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
-        if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) cognitoReplyPrompt += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
+        addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+        let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+        if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) cognitoReplyPromptText += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
         const cognitoReplyParsedResponse = await commonAIStepExecution(
-            cognitoReplyStepIdentifier, cognitoReplyPrompt, selectedModelApiName, MessageSender.Cognito, MessagePurpose.CognitoToMuse, effectiveCognitoSysInstruction, imageApiPart, activeThinkingConfig,
-            userInput, imageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
+            cognitoReplyStepIdentifier, cognitoReplyPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, geminiImageApiPart,
+            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
         );
         if (cancelRequestRef.current) break;
         processNotepadUpdateFromAI(cognitoReplyParsedResponse, MessageSender.Cognito, addMessage);
@@ -438,13 +531,13 @@ export const useChatLogic = ({
             }
         }
       }
-      setIsInternalDiscussionActive(false); // End of discussion loop
+      setIsInternalDiscussionActive(false); 
 
       if (cancelRequestRef.current) throw new Error("用户取消操作");
 
       const finalAnswerStepIdentifier = 'cognito-final-answer';
-      addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${currentModelDetails.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-      const finalAnswerPrompt = `${effectiveCognitoSysInstruction ? effectiveCognitoSysInstruction + " " : ""}用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}
+      addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
+      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}
 
 **您的最终任务是为用户生成最终答案，并将其放入记事本中。**
 
@@ -457,24 +550,48 @@ export const useChatLogic = ({
 \n${commonPromptInstructions()}`;
 
       const finalAnswerParsedResponse = await commonAIStepExecution(
-          finalAnswerStepIdentifier, finalAnswerPrompt, selectedModelApiName, MessageSender.Cognito, MessagePurpose.FinalResponse, effectiveCognitoSysInstruction, imageApiPart, activeThinkingConfig,
-          userInput, imageApiPart, [...currentLocalDiscussionLog]
+          finalAnswerStepIdentifier, finalAnswerPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.FinalResponse, geminiImageApiPart,
+          userInput, geminiImageApiPart, [...currentLocalDiscussionLog]
       );
       if (cancelRequestRef.current) throw new Error("用户取消操作");
       processNotepadUpdateFromAI(finalAnswerParsedResponse, MessageSender.Cognito, addMessage);
 
     } catch (error) {
-      const catchedError = error as Error & {isApiKeyError?: boolean};
-      if (cancelRequestRef.current && !catchedError.isApiKeyError) { /* User cancelled, handled by finally */ }
-      else if (!catchedError.isApiKeyError && !failedStepInfo) {
-        console.error("聊天流程中发生错误:", catchedError);
-        addMessage(`错误: ${catchedError.message}`, MessageSender.System, MessagePurpose.SystemNotification);
+      const e = error as Error;
+      if (cancelRequestRef.current) { /* User cancelled, handled by finally */ }
+      else if (!e.message.includes("API密钥") && !e.message.toLowerCase().includes("api key")) { 
+        console.error("聊天流程中发生错误:", error);
+        addMessage(`错误: ${e.message}`, MessageSender.System, MessagePurpose.SystemNotification);
       }
       setIsInternalDiscussionActive(false);
     } finally {
       setIsLoading(false);
       stopProcessingTimer();
-      setIsInternalDiscussionActive(false); // Ensure it's false when processing ends
+      setIsInternalDiscussionActive(false); 
+
+      if (!cancelRequestRef.current && !failedStepInfo) { // Successful completion of a new query
+        let completedTurns = 0;
+        // currentLocalDiscussionLog includes the initial Cognito message to Muse.
+        // A single "turn" or "round" here means Muse replied and Cognito replied again in the loop.
+        // Or if AI driven, however many back-and-forths occurred.
+        // If discussionLog.length is 1 (only Cognito's initial), no discussion rounds.
+        // If discussionLog.length > 1, some discussion happened.
+        if (currentLocalDiscussionLog.length > 1) {
+            if (discussionMode === DiscussionMode.FixedTurns) {
+                completedTurns = manualFixedTurns;
+            } else {
+                // currentDiscussionTurn is 0-indexed for loop iterations.
+                // Each iteration is one round of (Muse response, Cognito response).
+                // So, currentDiscussionTurn + 1 is the number of rounds.
+                completedTurns = currentDiscussionTurn + 1;
+            }
+        }
+        setLastCompletedTurnCount(completedTurns);
+      } else if (cancelRequestRef.current && !failedStepInfo) { // Cancelled new query
+          setLastCompletedTurnCount(0); // Reset or keep previous? Resetting is simpler.
+      }
+      // If failedStepInfo is set, lastCompletedTurnCount remains from the previous successful query.
+
       if (userImageForDisplay?.dataUrl.startsWith('blob:')) {
         URL.revokeObjectURL(userImageForDisplay.dataUrl);
       }
@@ -482,98 +599,138 @@ export const useChatLogic = ({
         addMessage("用户已停止AI响应。", MessageSender.System, MessagePurpose.SystemNotification);
       }
     }
-  };
+  }, [
+      isLoading, setIsLoading, setFailedStepInfo, setDiscussionLog, setCurrentDiscussionTurn, 
+      setIsInternalDiscussionActive, setGlobalApiKeyStatus, startProcessingTimer, stopProcessingTimer,
+      addMessage, processNotepadUpdateFromAI, cognitoModelDetails, museModelDetails, discussionMode, 
+      manualFixedTurns, notepadContent, commonAIStepExecution, failedStepInfo, currentDiscussionTurn, setLastCompletedTurnCount // Added currentDiscussionTurn and setLastCompletedTurnCount
+    ]);
 
-  const retryFailedStep = async (stepToRetry: FailedStepPayload) => {
+  const retryFailedStep = useCallback(async (stepToRetry: FailedStepPayload) => {
     if (isLoading) return;
 
     setIsLoading(true);
     cancelRequestRef.current = false;
+    setGlobalApiKeyStatus({}); 
     startProcessingTimer();
 
-    const originalErrorMsgId = stepToRetry.originalSystemErrorMsgId;
     setFailedStepInfo(null);
-    // isInternalDiscussionActive and currentDiscussionTurn will be set by continueDiscussionAfterSuccessfulRetry if needed
-
     addMessage(
       `[${stepToRetry.sender} - ${stepToRetry.stepIdentifier}] 正在手动重试...`,
       MessageSender.System,
       MessagePurpose.SystemNotification
     );
 
-    let systemInstructionForRetry: string | undefined;
-    if (currentModelDetails.supportsSystemInstruction) {
-        systemInstructionForRetry = stepToRetry.sender === MessageSender.Cognito ? cognitoSystemPrompt : museSystemPrompt;
-    }
-    const updatedStepToRetry = { ...stepToRetry, systemInstruction: systemInstructionForRetry };
-
+    const modelForRetry = stepToRetry.sender === MessageSender.Cognito ? cognitoModelDetails : museModelDetails;
+    const systemInstructionForRetry = stepToRetry.sender === MessageSender.Cognito ? cognitoSystemPrompt : museSystemPrompt;
+    
+    const updatedStepToRetry = { 
+      ...stepToRetry, 
+      systemInstruction: modelForRetry.supportsSystemInstruction ? systemInstructionForRetry : undefined,
+      modelName: modelForRetry.apiName, 
+    };
 
     try {
-      const result = await generateResponse(
-        updatedStepToRetry.prompt,
-        updatedStepToRetry.modelName,
-        updatedStepToRetry.systemInstruction,
-        updatedStepToRetry.imageApiPart,
-        updatedStepToRetry.thinkingConfig
-      );
+      let result: { text: string; durationMs: number; error?: string };
+      const geminiImageApiPartForRetry = updatedStepToRetry.imageApiPart; 
+      const currentOpenAiModelIdForRetry = modelForRetry.apiName; // Will be cognito/muse specific OpenAI model ID
+
+      if (useOpenAiApiConfig) {
+        result = await generateOpenAiResponse(
+          updatedStepToRetry.prompt,
+          currentOpenAiModelIdForRetry, 
+          openAiApiKey,
+          openAiApiBaseUrl,
+          updatedStepToRetry.systemInstruction,
+          geminiImageApiPartForRetry ? { mimeType: geminiImageApiPartForRetry.inlineData.mimeType, data: geminiImageApiPartForRetry.inlineData.data } : undefined
+        );
+      } else { 
+        result = await generateGeminiResponse(
+          updatedStepToRetry.prompt,
+          modelForRetry.apiName, 
+          useCustomApiConfig,
+          customApiKey, 
+          customApiEndpoint, 
+          updatedStepToRetry.systemInstruction,
+          geminiImageApiPartForRetry,
+          getThinkingConfigForGeminiModel(modelForRetry)
+        );
+      }
 
       if (cancelRequestRef.current) throw new Error("用户已停止手动重试");
       if (result.error) {
-        if(result.error.includes("API key not valid")) {
-            setIsApiKeyMissingState(true);
-            throw Object.assign(new Error(result.text), {isApiKeyError: true});
-        }
+         if (result.error === "API key not configured" || result.error.toLowerCase().includes("api key not provided")) {
+             setGlobalApiKeyStatus({isMissing: true, message: result.text});
+             throw new Error(result.text);
+          }
+          if (result.error === "API key invalid or permission denied") {
+             setGlobalApiKeyStatus({isInvalid: true, message: result.text});
+             throw new Error(result.text);
+          }
         throw new Error(result.text);
       }
+      setGlobalApiKeyStatus({ isMissing: false, isInvalid: false, message: undefined }); 
 
       const parsedResponseFromRetry = parseAIResponse(result.text);
       addMessage(parsedResponseFromRetry.spokenText, updatedStepToRetry.sender, updatedStepToRetry.purpose, result.durationMs);
       processNotepadUpdateFromAI(parsedResponseFromRetry, updatedStepToRetry.sender, addMessage);
       addMessage(`[${updatedStepToRetry.sender} - ${updatedStepToRetry.stepIdentifier}] 手动重试成功。后续流程将继续。`, MessageSender.System, MessagePurpose.SystemNotification);
 
-      // continueDiscussionAfterSuccessfulRetry will manage isLoading, timer, and internal discussion states
-      await continueDiscussionAfterSuccessfulRetry(updatedStepToRetry, parsedResponseFromRetry);
+      // continueDiscussionAfterSuccessfulRetry will handle its own finally block for isLoading, timer, and lastCompletedTurnCount
+      await continueDiscussionAfterSuccessfulRetry(
+          {...updatedStepToRetry, imageApiPartForFlow: geminiImageApiPartForRetry}, 
+          parsedResponseFromRetry
+      );
 
     } catch (error) {
-      const catchedError = error as Error & {isApiKeyError?: boolean};
-      if (cancelRequestRef.current && !catchedError.isApiKeyError) { /* User cancelled */ }
+        const e = error as Error;
+      if (cancelRequestRef.current) { /* User cancelled */ }
       else {
-        console.error("手动重试失败:", catchedError);
-        const errorMsg = catchedError.message || "未知错误";
+        console.error("手动重试失败:", error);
+        const errorMsg = e.message || "未知错误";
+        
+        const displayErrorMessage = errorMsg.includes("API密钥") || errorMsg.toLowerCase().includes("api key") 
+          ? errorMsg 
+          : `[${updatedStepToRetry.sender} - ${updatedStepToRetry.stepIdentifier}] 手动重试失败: ${errorMsg}. 您可以再次尝试。`;
 
-        let systemInstructionForNewFailure: string | undefined;
-        if (currentModelDetails.supportsSystemInstruction) {
-            systemInstructionForNewFailure = updatedStepToRetry.sender === MessageSender.Cognito ? cognitoSystemPrompt
-                                          : updatedStepToRetry.sender === MessageSender.Muse ? museSystemPrompt
-                                          : undefined;
+        const newErrorMsgId = addMessage(displayErrorMessage, MessageSender.System, MessagePurpose.SystemNotification);
+        
+        if (!errorMsg.includes("API密钥") && !errorMsg.toLowerCase().includes("api key")) {
+            let thinkingConfigForNewFailure: {thinkingBudget: number} | undefined = undefined;
+            if (!useOpenAiApiConfig) { 
+                thinkingConfigForNewFailure = getThinkingConfigForGeminiModel(modelForRetry);
+            }
+            setFailedStepInfo({ 
+              ...updatedStepToRetry, 
+              originalSystemErrorMsgId: newErrorMsgId, 
+              thinkingConfig: thinkingConfigForNewFailure 
+            });
         }
-
-        const newErrorMsgId = addMessage(
-            `[${updatedStepToRetry.sender} - ${updatedStepToRetry.stepIdentifier}] 手动重试失败: ${errorMsg}. 您可以再次尝试。`,
-            MessageSender.System,
-            MessagePurpose.SystemNotification
-        );
-        if (catchedError.isApiKeyError) setIsApiKeyMissingState(true);
-        setFailedStepInfo({ ...updatedStepToRetry, originalSystemErrorMsgId: newErrorMsgId, systemInstruction: systemInstructionForNewFailure });
       }
-       // Only stop loading if the retry itself fails or is cancelled before continuation
-      if (!cancelRequestRef.current || failedStepInfo) { // If not cancelled or if failedStepInfo is set (meaning retry failed)
+      // Only set loading to false if not cancelled OR if a new failedStepInfo is set (meaning retry truly failed)
+      if (!cancelRequestRef.current || failedStepInfo) { 
           setIsLoading(false);
           stopProcessingTimer();
       }
-      setIsInternalDiscussionActive(false); // Ensure this is false on any retry failure path
+      setIsInternalDiscussionActive(false); 
       if (cancelRequestRef.current && !failedStepInfo) {
           addMessage("用户已停止手动重试。", MessageSender.System, MessagePurpose.SystemNotification);
       }
     }
-  };
+  }, [
+    isLoading, setIsLoading, setGlobalApiKeyStatus, startProcessingTimer, stopProcessingTimer, 
+    setFailedStepInfo, addMessage, cognitoModelDetails, museModelDetails, cognitoSystemPrompt, 
+    museSystemPrompt, useOpenAiApiConfig, openAiApiKey, openAiApiBaseUrl, useCustomApiConfig, 
+    customApiKey, customApiEndpoint, getThinkingConfigForGeminiModel, processNotepadUpdateFromAI, 
+    continueDiscussionAfterSuccessfulRetry, failedStepInfo, setIsInternalDiscussionActive, currentDiscussionTurn, setLastCompletedTurnCount, discussionMode, manualFixedTurns, discussionLog // Added dependencies
+  ]);
 
 
-  const stopGenerating = () => {
+  const stopGenerating = useCallback(() => {
     cancelRequestRef.current = true;
     setIsInternalDiscussionActive(false);
-    // setIsLoading and stopProcessingTimer are handled by the finally blocks of the active async operations.
-  };
+    // Let finally blocks handle isLoading and timer
+  }, [setIsInternalDiscussionActive]);
 
   return {
     isLoading,
@@ -585,5 +742,6 @@ export const useChatLogic = ({
     cancelRequestRef,
     currentDiscussionTurn,
     isInternalDiscussionActive,
+    lastCompletedTurnCount, // Expose new state
   };
 };
