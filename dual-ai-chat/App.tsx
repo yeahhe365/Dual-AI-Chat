@@ -1,6 +1,14 @@
 
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { MathJaxContext } from 'better-react-mathjax';
+
+// MathJax 配置：支持 $...$ 与 \\(...\\) 行内公式
+const mathJaxConfig = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+  },
+};
 import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode } from './types';
 import ChatInput from './components/ChatInput';
 import MessageBubble from './components/MessageBubble';
@@ -420,7 +428,8 @@ const App: React.FC = () => {
 
 
   return (
-    <div className={`flex flex-col h-screen bg-white shadow-2xl overflow-hidden border-x border-gray-300 ${isNotepadFullscreen ? 'fixed inset-0 z-40' : 'relative'}`}>
+    <MathJaxContext config={mathJaxConfig}>
+      <div className={`flex flex-col h-screen bg-white shadow-2xl overflow-hidden border-x border-gray-300 ${isNotepadFullscreen ? 'fixed inset-0 z-40' : 'relative'}`}>
       <header className={`p-3 md:p-4 bg-gray-50 border-b border-gray-300 flex items-center justify-between shrink-0 space-x-2 md:space-x-3 flex-wrap ${isNotepadFullscreen ? 'relative z-0' : 'relative z-10'}`}>
         <div className="flex items-center shrink-0">
           <BotMessageSquare size={28} className="mr-2 md:mr-3 text-sky-600" />
@@ -645,7 +654,8 @@ const App: React.FC = () => {
           onOpenAiMuseModelIdChange={(e) => setOpenAiMuseModelId(e.target.value)}
         />
       )}
-    </div>
+      </div>
+    </MathJaxContext>
   );
 };
 

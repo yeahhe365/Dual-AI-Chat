@@ -4,6 +4,7 @@ import { MessageSender } from '../types';
 import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { MathJax } from 'better-react-mathjax';
 
 interface NotepadProps {
   content: string;
@@ -115,11 +116,13 @@ const Notepad: React.FC<NotepadProps> = ({
       </header>
       <div className="flex-grow overflow-y-auto relative bg-white">
         {isPreviewMode ? (
-          <div
-            className="markdown-preview"
-            dangerouslySetInnerHTML={{ __html: processedHtml }}
-            aria-label="Markdown 预览"
-          />
+          <MathJax dynamic>
+            <div
+              className="markdown-preview p-4"
+              dangerouslySetInnerHTML={{ __html: processedHtml }}
+              aria-label="Markdown 预览"
+            />
+          </MathJax>
         ) : (
           <div 
             className="w-full h-full p-3 bg-white text-gray-800 font-mono text-xl leading-relaxed"

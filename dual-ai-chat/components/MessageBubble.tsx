@@ -3,6 +3,7 @@ import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload } from '.
 import { Lightbulb, MessageSquareText, UserCircle, Zap, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { MathJax } from 'better-react-mathjax';
 
 interface SenderIconProps {
   sender: MessageSender;
@@ -169,10 +170,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, f
                   {getPurposePrefix(purpose, sender)}
                 </span>
               )}
-              <div
-                className={`chat-markdown-content text-sm ${bubbleTextColorClass}`}
-                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-              />
+              <MathJax dynamic>
+                <div
+                  className={`chat-markdown-content text-sm ${bubbleTextColorClass}`}
+                  dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                />
+              </MathJax>
             </>
           ) : (
             <p className={`text-sm ${bubbleTextColorClass} whitespace-pre-wrap`}>
