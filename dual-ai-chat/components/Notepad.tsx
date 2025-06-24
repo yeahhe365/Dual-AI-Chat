@@ -1,9 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { MessageSender } from '../types';
-import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2 } from 'lucide-react';
+import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2, Download } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { exportNotebookToPDF, isPDFExportSupported } from '../utils/pdfExportUtils';
 
 interface NotepadProps {
   content: string;
@@ -30,6 +31,7 @@ const Notepad: React.FC<NotepadProps> = ({
 }) => {
   const [isPreviewMode, setIsPreviewMode] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const processedHtml = useMemo(() => {
     if (isPreviewMode) {
@@ -46,6 +48,36 @@ const Notepad: React.FC<NotepadProps> = ({
       setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
       console.error('无法复制记事本内容: ', err);
+    }
+  };
+
+  const handleExportToPDF = async () => {
+    if (!isPDFExportSupported()) {
+      alert('您的浏览器不支持PDF导出功能');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      // 先切换到预览模式以确保导出的是格式化后的内容
+      const wasPreviewMode = isPreviewMode;
+      if (!isPreviewMode) {
+        setIsPreviewMode(true);
+        // 给渲染一点时间
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      await exportNotebookToPDF(content, 'notebook');
+      
+      // 如果之前不是预览模式，切回原来的模式
+      if (!wasPreviewMode) {
+        setIsPreviewMode(false);
+      }
+    } catch (error) {
+      console.error('PDF导出失败:', error);
+      alert('PDF导出失败，请重试');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -102,6 +134,23 @@ const Notepad: React.FC<NotepadProps> = ({
             aria-label={isCopied ? "已复制记事本内容到剪贴板" : "复制记事本内容"}
           >
             {isCopied ? <Check size={18} className="text-green-500" /> : <Copy size={18} />}
+          </button>
+          <button
+            onClick={handleExportToPDF}
+            disabled={isExporting}
+            className={baseButtonClass}
+            title={isExporting ? "导出中..." : "导出为PDF"}
+            aria-label={isExporting ? "正在导出PDF" : "导出记事本为PDF文件"}
+          >
+            {isExporting ? (
+              <span className="animate-spin inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </span>
+            ) : (
+              <Download size={18} />
+            )}
           </button>
           <button
             onClick={() => setIsPreviewMode(!isPreviewMode)}
