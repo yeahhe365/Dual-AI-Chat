@@ -38,7 +38,9 @@ import {
   DEFAULT_OPENAI_COGNITO_MODEL_ID,
   DEFAULT_OPENAI_MUSE_MODEL_ID,
 } from './constants';
-import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database } from 'lucide-react'; 
+
+import { Virtuoso } from 'react-virtuoso';
+import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles } from 'lucide-react'; 
 
 import { useChatLogic } from './hooks/useChatLogic';
 import { useNotepadLogic } from './hooks/useNotepadLogic';
@@ -506,20 +508,22 @@ const App: React.FC = () => {
             style={{ width: `${chatPanelWidthPercent}%` }}
           >
             <div className="flex flex-col flex-grow h-full"> 
-              <div 
-                ref={chatContainerRef} 
-                className="flex-grow p-4 space-y-4 overflow-y-auto bg-gray-200 scroll-smooth"
-                onScroll={handleChatScroll}
-              >
-                {messages.map((msg) => (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    failedStepPayloadForThisMessage={failedStepInfo && msg.id === failedStepInfo.originalSystemErrorMsgId ? failedStepInfo : null}
-                    onManualRetry={retryFailedStep} 
-                  />
-                ))}
-              </div>
+              <Virtuoso<ChatMessage>
+                  data={messages}
+                  followOutput="auto"
+                  className="flex-grow bg-gray-200 p-4"
+                  itemContent={(_index: number, msg: ChatMessage) => (
+                    <div className="mb-4">
+                      
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      failedStepPayloadForThisMessage={failedStepInfo && msg.id === failedStepInfo.originalSystemErrorMsgId ? failedStepInfo : null}
+                      onManualRetry={retryFailedStep}
+                    />
+                    </div>
+                  )}
+                />
               <ChatInput
                 onSendMessage={startChatProcessing} 
                 isLoading={isLoading}
