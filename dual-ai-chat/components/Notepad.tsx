@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { MessageSender } from '../types';
 import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2 } from 'lucide-react';
-import { marked } from 'marked';
+import { parseMarkdownWithMath } from '../utils/markdownWithMath';
 import DOMPurify from 'dompurify';
 import { MathJax } from 'better-react-mathjax';
 
@@ -34,7 +34,7 @@ const Notepad: React.FC<NotepadProps> = ({
 
   const processedHtml = useMemo(() => {
     if (isPreviewMode) {
-      const rawHtml = marked.parse(content) as string;
+      const rawHtml = parseMarkdownWithMath(content);
       return DOMPurify.sanitize(rawHtml);
     }
     return '';

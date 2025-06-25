@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload } from '../types';
 import { Lightbulb, MessageSquareText, UserCircle, Zap, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
-import { marked } from 'marked';
+import { parseMarkdownWithMath } from '../utils/markdownWithMath';
 import DOMPurify from 'dompurify';
 import { MathJax } from 'better-react-mathjax';
 
@@ -112,7 +112,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, f
   let sanitizedHtml = '';
   if (shouldRenderMarkdown && messageText) {
     try {
-      const rawHtml = marked.parse(messageText) as string;
+      const rawHtml = parseMarkdownWithMath(messageText);
       sanitizedHtml = DOMPurify.sanitize(rawHtml);
     } catch (e) {
       console.error("Markdown parsing error:", e);
