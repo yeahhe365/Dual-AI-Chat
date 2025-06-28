@@ -1,6 +1,14 @@
 
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { MathJaxContext } from 'better-react-mathjax';
+
+// MathJax 配置：支持 $...$ 与 \\(...\\) 行内公式
+const mathJaxConfig = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+  },
+};
 import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode } from './types';
 import ChatInput from './components/ChatInput';
 import MessageBubble from './components/MessageBubble';
@@ -30,7 +38,9 @@ import {
   DEFAULT_OPENAI_COGNITO_MODEL_ID,
   DEFAULT_OPENAI_MUSE_MODEL_ID,
 } from './constants';
-import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database } from 'lucide-react'; 
+
+import { Virtuoso } from 'react-virtuoso';
+import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles } from 'lucide-react'; 
 
 import { useChatLogic } from './hooks/useChatLogic';
 import { useNotepadLogic } from './hooks/useNotepadLogic';
@@ -420,7 +430,8 @@ const App: React.FC = () => {
 
 
   return (
-    <div className={`flex flex-col h-screen bg-white shadow-2xl overflow-hidden border-x border-gray-300 ${isNotepadFullscreen ? 'fixed inset-0 z-40' : 'relative'}`}>
+    <MathJaxContext config={mathJaxConfig}>
+      <div className={`flex flex-col h-screen bg-white shadow-2xl overflow-hidden border-x border-gray-300 ${isNotepadFullscreen ? 'fixed inset-0 z-40' : 'relative'}`}>
       <header className={`p-3 md:p-4 bg-gray-50 border-b border-gray-300 flex items-center justify-between shrink-0 space-x-2 md:space-x-3 flex-wrap ${isNotepadFullscreen ? 'relative z-0' : 'relative z-10'}`}>
         <div className="flex items-center shrink-0">
           <BotMessageSquare size={28} className="mr-2 md:mr-3 text-sky-600" />
@@ -497,20 +508,22 @@ const App: React.FC = () => {
             style={{ width: `${chatPanelWidthPercent}%` }}
           >
             <div className="flex flex-col flex-grow h-full"> 
-              <div 
-                ref={chatContainerRef} 
-                className="flex-grow p-4 space-y-4 overflow-y-auto bg-gray-200 scroll-smooth"
-                onScroll={handleChatScroll}
-              >
-                {messages.map((msg) => (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    failedStepPayloadForThisMessage={failedStepInfo && msg.id === failedStepInfo.originalSystemErrorMsgId ? failedStepInfo : null}
-                    onManualRetry={retryFailedStep} 
-                  />
-                ))}
-              </div>
+              <Virtuoso<ChatMessage>
+                  data={messages}
+                  followOutput="auto"
+                  className="flex-grow bg-gray-200 p-4"
+                  itemContent={(_index: number, msg: ChatMessage) => (
+                    <div className="mb-4">
+                      
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      failedStepPayloadForThisMessage={failedStepInfo && msg.id === failedStepInfo.originalSystemErrorMsgId ? failedStepInfo : null}
+                      onManualRetry={retryFailedStep}
+                    />
+                    </div>
+                  )}
+                />
               <ChatInput
                 onSendMessage={startChatProcessing} 
                 isLoading={isLoading}
@@ -645,7 +658,8 @@ const App: React.FC = () => {
           onOpenAiMuseModelIdChange={(e) => setOpenAiMuseModelId(e.target.value)}
         />
       )}
-    </div>
+      </div>
+    </MathJaxContext>
   );
 };
 

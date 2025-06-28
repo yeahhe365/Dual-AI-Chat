@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload } from '../types';
 import { Lightbulb, MessageSquareText, UserCircle, Zap, AlertTriangle, Copy, Check, RefreshCw } from 'lucide-react';
-import { marked } from 'marked';
+import { parseMarkdownWithMath } from '../utils/markdownWithMath';
 import DOMPurify from 'dompurify';
+import { MathJax } from 'better-react-mathjax';
 
 interface SenderIconProps {
   sender: MessageSender;
@@ -108,16 +109,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, f
     !isPlaceholderAiMessage &&
     purpose !== MessagePurpose.SystemNotification; 
 
-  let sanitizedHtml = '';
-  if (shouldRenderMarkdown && messageText) {
-    try {
-      const rawHtml = marked.parse(messageText) as string;
-      sanitizedHtml = DOMPurify.sanitize(rawHtml);
-    } catch (e) {
-      console.error("Markdown parsing error:", e);
-      sanitizedHtml = `<p><em>内容解析出错</em></p><pre>${DOMPurify.sanitize(messageText)}</pre>`; 
+  const sanitizedHtml = useMemo(() => {
+    if (shouldRenderMarkdown && messageText) {
+      try {
+        const rawHtml = parseMarkdownWithMath(messageText);
+        return DOMPurify.sanitize(rawHtml);
+      } catch (e) {
+        console.error("Markdown parsing error:", e);
+        return `<p><em>内容解析出错</em></p><pre>${DOMPurify.sanitize(messageText)}</pre>`;
+      }
     }
-  }
+    return '';
+  }, [shouldRenderMarkdown, messageText]);
+  
 
   const handleCopy = async () => {
     const prefix = getPurposePrefix(purpose, sender);
@@ -169,10 +173,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, f
                   {getPurposePrefix(purpose, sender)}
                 </span>
               )}
-              <div
-                className={`chat-markdown-content text-sm ${bubbleTextColorClass}`}
-                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-              />
+              <MathJax dynamic>
+                <div
+                  className={`chat-markdown-content text-sm ${bubbleTextColorClass}`}
+                  dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                />
+              </MathJax>
             </>
           ) : (
             <p className={`text-sm ${bubbleTextColorClass} whitespace-pre-wrap`}>
