@@ -1,7 +1,7 @@
 
-import { NotepadAction, NotepadUpdatePayload, ParsedAIResponse } from '../types';
+import type { NotepadAction, NotepadUpdatePayload, ParsedAIResponse } from '../types';
 
-export { ParsedAIResponse };
+export type { ParsedAIResponse };
 
 export const parseAIResponse = (responseText: string): ParsedAIResponse => {
   let spokenText = responseText;

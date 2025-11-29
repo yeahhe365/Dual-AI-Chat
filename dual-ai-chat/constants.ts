@@ -1,12 +1,12 @@
 
-import { AiModel } from './types';
+import type { AiModel } from './types';
 
 export const GEMINI_3_PRO_MODEL_ID = 'gemini-3-pro-preview';
 export const GEMINI_2_5_PRO_MODEL_ID = 'gemini-2.5-pro';
 export const GEMINI_2_5_FLASH_MODEL_ID = 'gemini-2.5-flash';
 export const GEMINI_2_5_FLASH_LITE_MODEL_ID = 'gemini-2.5-flash-lite';
 
-export { AiModel };
+export type { AiModel };
 
 export const MODELS: AiModel[] = [
   {
