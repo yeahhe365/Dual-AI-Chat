@@ -116,7 +116,7 @@ You share a "Notepad" with your partner. You must output your conversational res
     { "action": "prepend", "content": "Text to add at top" },
     { "action": "replace_section", "header": "Header Title", "content": "New content for section" },
     { "action": "append_to_section", "header": "Header Title", "content": "Text to append to section" },
-    { "action": "search_and_replace", "find": "exact string", "with": "new string", "all": boolean }
+    { "action": "search_and_replace", "find": "exact string", "replacement": "new string", "all": boolean }
   ],
   "discussion_complete": boolean // Set to true ONLY if the discussion is finished and ready for the user.
 }

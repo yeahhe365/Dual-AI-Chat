@@ -117,9 +117,9 @@ export const applyNotepadModifications = (currentContent: string, modifications:
         
         if (mod.all) {
           const regex = new RegExp(safeSearchString, 'g');
-          newContent = newContent.replace(regex, mod.with);
+          newContent = newContent.replace(regex, mod.replacement);
         } else {
-          newContent = newContent.replace(safeSearchString, mod.with);
+          newContent = newContent.replace(safeSearchString, mod.replacement);
         }
         break;
       }

@@ -44,7 +44,7 @@ export type NotepadAction =
   | { action: 'prepend'; content: string }
   | { action: 'replace_section'; header: string; content: string } // Replace content under a specific header
   | { action: 'append_to_section'; header: string; content: string } // New: Append content to the end of a section
-  | { action: 'search_and_replace'; find: string; with: string; all?: boolean }; // Uses 'find' and 'with'
+  | { action: 'search_and_replace'; find: string; replacement: string; all?: boolean }; // Uses 'find' and 'replacement'
 
 export type NotepadUpdatePayload = {
   modifications?: NotepadAction[];
