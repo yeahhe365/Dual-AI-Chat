@@ -9,6 +9,10 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
   const [chatPanelWidthPercent, setChatPanelWidthPercent] = useState<number>(initialChatPanelPercent);
   const [currentTotalProcessingTimeMs, setCurrentTotalProcessingTimeMs] = useState<number>(0);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  
+  // Mobile specific state
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [activeMobileTab, setActiveMobileTab] = useState<'chat' | 'notepad'>('chat');
 
   const isResizingRef = useRef<boolean>(false);
   const initialMouseXRef = useRef<number>(0);
@@ -45,6 +49,16 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
     }
   }, []);
 
+  // Mobile Detection
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768); // 768px is the standard md breakpoint
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleMouseMoveOnDocument = useCallback((e: MouseEvent) => {
     if (!isResizingRef.current || !panelsContainerRef.current) return;
@@ -108,11 +122,14 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
 
   return {
     isNotepadFullscreen,
-    setIsNotepadFullscreen, // Expose setter if direct manipulation is needed from App.tsx
+    setIsNotepadFullscreen, 
     chatPanelWidthPercent,
-    setChatPanelWidthPercent, // Expose setter
+    setChatPanelWidthPercent,
     currentTotalProcessingTimeMs,
     isSettingsModalOpen,
+    isMobile,
+    activeMobileTab,
+    setActiveMobileTab,
     toggleNotepadFullscreen,
     handleMouseDownOnResizer,
     handleResizerKeyDown,
@@ -121,6 +138,6 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
     startProcessingTimer,
     stopProcessingTimer,
     updateProcessingTimer,
-    currentQueryStartTimeRef, // Expose ref for use in other hooks/App.tsx
+    currentQueryStartTimeRef,
   };
 };

@@ -85,6 +85,7 @@ const App: React.FC = () => {
         >
           <Notepad
             content={notepad.notepadContent}
+            previousContent={notepad.previousContent}
             lastUpdatedBy={notepad.lastNotepadUpdateBy}
             isLoading={chat.isLoading}
             isNotepadFullscreen={ui.isNotepadFullscreen}

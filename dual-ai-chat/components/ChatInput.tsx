@@ -1,16 +1,22 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Paperclip, XCircle, StopCircle } from 'lucide-react'; // Added StopCircle
-import LoadingSpinner from './LoadingSpinner';
+import { ArrowUp, Plus, X, Image as ImageIcon } from 'lucide-react';
 
 interface ChatInputProps {
   onSendMessage: (message: string, imageFile?: File | null) => void;
   isLoading: boolean;
   isApiKeyMissing: boolean;
-  onStopGenerating: () => void; // New prop
+  onStopGenerating: () => void;
 }
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+// Custom Stop Icon mimicking All Model Chat
+const IconStop = ({ size = 24, className = "", color = "currentColor" }: { size?: number, className?: string, color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+    <rect x="4" y="4" width="16" height="16" rx="2" fill={color} />
+  </svg>
+);
 
 const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKeyMissing, onStopGenerating }) => {
   const [inputValue, setInputValue] = useState('');
@@ -29,18 +35,28 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
     setImagePreviewUrl(null);
   }, [selectedImage]);
 
+  const adjustTextareaHeight = useCallback(() => {
+    if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
+        textareaRef.current.style.height = `${newHeight}px`;
+    }
+  }, []);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [inputValue, adjustTextareaHeight]);
+
   const handleImageFile = (file: File | null) => {
     if (file && ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       setSelectedImage(file);
     } else if (file) {
-      alert('不支持的文件类型。请选择 JPG, PNG, GIF, 或 WEBP 格式的图片。');
+      alert('不支持的文件类型。请使用 JPG, PNG, GIF 或 WEBP。');
       setSelectedImage(null);
     } else {
       setSelectedImage(null);
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeImage = () => {
@@ -53,27 +69,16 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
       onSendMessage(inputValue.trim(), selectedImage);
       setInputValue('');
       removeImage();
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
+      // Reset height immediately
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
     }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // This will only be called if the button's type is "submit" (i.e., !isLoading)
-    triggerSendMessage();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // Only trigger send if not loading; stop button handles its own click
-      if (!isLoading) {
-        triggerSendMessage();
-      }
+      if (!isLoading) triggerSendMessage();
     }
-    // No specific action needed for Shift+Enter, as the default textarea behavior is to add a newline.
   };
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -101,47 +106,44 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
     }
   }, []);
 
-  const handleDragOver = (e: React.DragEvent<HTMLTextAreaElement>) => {
-    e.preventDefault();
-    setIsDraggingOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLTextAreaElement>) => {
-    e.preventDefault();
-    setIsDraggingOver(false);
-  };
-
-  const handleFileButtonClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleImageFile(e.target.files[0]);
-    }
-  };
-
-  const isDisabledInput = isLoading || isApiKeyMissing;
-
   return (
-    <form onSubmit={handleSubmit} className="px-4 pt-4 pb-0 mb-0 bg-gray-100 border-t border-gray-300">
-      {imagePreviewUrl && selectedImage && (
-        <div className="mb-2 p-2 bg-gray-200 rounded-md relative max-w-xs border border-gray-300">
-          <img src={imagePreviewUrl} alt={selectedImage.name || "图片预览"} className="max-h-24 max-w-full rounded" />
-          <button
-            type="button"
-            onClick={removeImage}
-            className="absolute top-1 right-1 bg-black bg-opacity-40 text-white rounded-full p-0.5 hover:bg-opacity-60"
-            aria-label="移除图片"
-          >
-            <XCircle size={20} />
-          </button>
-          <div className="text-xs text-gray-600 mt-1 truncate">{selectedImage.name} ({(selectedImage.size / 1024).toFixed(1)} KB)</div>
-        </div>
-      )}
-      <div className="flex items-center space-x-2"> {/* Changed items-end to items-center */}
+    <div className={`max-w-4xl mx-auto w-full transition-transform duration-200 ${isDraggingOver ? 'scale-[1.01]' : ''}`}>
+      <div 
+        className={`
+            flex flex-col gap-2 rounded-[26px] bg-white border p-3 sm:p-4 shadow-xl transition-all duration-300 relative
+            ${isDraggingOver ? 'ring-2 ring-sky-500 border-sky-500 bg-sky-50' : 'border-slate-200 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500/20'}
+        `}
+      >
+        
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={(e) => e.target.files && handleImageFile(e.target.files[0])}
+          accept={ACCEPTED_IMAGE_TYPES.join(',')}
+          className="hidden"
+        />
+
+        {/* Image Preview Area */}
+        {imagePreviewUrl && selectedImage && (
+            <div className="flex gap-2 overflow-x-auto pb-2 px-1 mb-1 custom-scrollbar">
+                <div className="relative inline-block w-fit group animate-in fade-in zoom-in-95 duration-200">
+                    <div className="relative rounded-xl overflow-hidden border border-slate-200 w-16 h-16 bg-slate-50 shadow-sm">
+                        <img src={imagePreviewUrl} alt="预览" className="w-full h-full object-cover" />
+                        <button
+                            onClick={removeImage}
+                            className="absolute top-0.5 right-0.5 bg-black/60 hover:bg-black/80 text-white rounded-full p-0.5 transition-colors backdrop-blur-sm opacity-0 group-hover:opacity-100"
+                        >
+                            <X size={12} strokeWidth={2.5} />
+                        </button>
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full shadow-sm border border-slate-100 p-0.5">
+                        <ImageIcon size={10} className="text-sky-500" />
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Text Area */}
         <textarea
           ref={textareaRef}
           value={inputValue}
@@ -149,56 +151,57 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          placeholder="询问任何问题"
-          className={`flex-grow p-3 bg-white border border-gray-400 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none placeholder-gray-500 text-gray-800 disabled:opacity-60 resize-none min-h-[48px] max-h-[150px] ${isDraggingOver ? 'ring-2 ring-sky-500 border-sky-500' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setIsDraggingOver(false); }}
+          placeholder={isApiKeyMissing ? "缺少 API 密钥" : "给 Dual AI 发送消息..."}
           rows={1}
-          disabled={isDisabledInput}
-          aria-label="聊天输入框"
-          onInput={(e) => {
-            const target = e.target as HTMLTextAreaElement;
-            target.style.height = 'auto';
-            target.style.height = `${target.scrollHeight}px`;
-          }}
+          className="w-full bg-transparent border-0 focus:ring-0 text-slate-700 placeholder-slate-400 px-1 py-1 resize-none max-h-[200px] min-h-[24px] text-base leading-relaxed custom-scrollbar outline-none"
+          disabled={isLoading || isApiKeyMissing}
         />
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelected}
-          accept={ACCEPTED_IMAGE_TYPES.join(',')}
-          className="hidden"
-          aria-label="选择图片文件"
-        />
-        <button
-          type="button"
-          onClick={handleFileButtonClick}
-          className="p-3 bg-gray-300 hover:bg-gray-400 rounded-lg text-gray-700 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-100 disabled:opacity-50 disabled:cursor-not-allowed h-[48px]" // Removed self-end
-          disabled={isDisabledInput}
-          aria-label="添加图片附件"
-          title="添加图片"
-        >
-          <Paperclip size={24} />
-        </button>
-        <button
-          type={isLoading ? "button" : "submit"}
-          onClick={isLoading ? onStopGenerating : undefined}
-          className={`p-3 rounded-lg text-white transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 h-[48px] flex items-center justify-center ${ // Removed self-end
-            isLoading
-            ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' // Stop button style
-            : `bg-sky-600 hover:bg-sky-700 focus:ring-sky-500 ${isApiKeyMissing || (!inputValue.trim() && !selectedImage) ? 'opacity-50 cursor-not-allowed' : ''}` // Send button style
-          }`}
-          disabled={!isLoading && (isApiKeyMissing || (!inputValue.trim() && !selectedImage))}
-          aria-label={isLoading ? "停止生成" : "发送消息"}
-          title={isLoading ? "停止生成" : "发送消息"}
-        >
-          {isLoading
-            ? <StopCircle size={24} />
-            : <Send size={24} />
-          }
-        </button>
+
+        {/* Bottom Toolbar */}
+        <div className="flex justify-between items-center pt-1">
+            {/* Left Actions */}
+            <div className="flex gap-1">
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-8 w-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    title="附加图片"
+                    disabled={isLoading || isApiKeyMissing}
+                >
+                    <Plus size={20} strokeWidth={2} />
+                </button>
+            </div>
+
+            {/* Right Actions (Send/Stop) */}
+            <div>
+                 <button
+                    onClick={isLoading ? onStopGenerating : triggerSendMessage}
+                    disabled={!isLoading && (isApiKeyMissing || (!inputValue.trim() && !selectedImage))}
+                    className={`
+                        flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1
+                        ${isLoading 
+                            ? 'bg-red-500 hover:bg-red-600 text-white focus:ring-red-200' 
+                            : 'bg-sky-600 hover:bg-sky-700 text-white disabled:bg-slate-100 disabled:text-slate-300 disabled:shadow-none focus:ring-sky-200'
+                        }
+                    `}
+                    title={isLoading ? "停止生成" : "发送消息"}
+                >
+                    {isLoading ? <IconStop size={12} /> : <ArrowUp size={18} strokeWidth={2.5} />}
+                </button>
+            </div>
+        </div>
       </div>
-    </form>
+      
+      {/* Footer / Helper text */}
+      {isApiKeyMissing && (
+        <div className="text-center mt-2 animate-in fade-in slide-in-from-bottom-2">
+           <p className="text-[10px] text-slate-400 bg-white/50 inline-block px-2 py-0.5 rounded-full border border-slate-100">
+              请在设置中配置 API 密钥以开始。
+           </p>
+        </div>
+      )}
+    </div>
   );
 };
 

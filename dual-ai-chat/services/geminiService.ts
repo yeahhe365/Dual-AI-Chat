@@ -1,12 +1,17 @@
 
 import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
+import { AiResponsePayload } from "../types";
 
 // Helper to create a GoogleGenAI instance with potential custom fetch
-const createGoogleAIClient = (apiKey: string, customApiEndpoint?: string): GoogleGenAI => {
-  const clientOptions: ConstructorParameters<typeof GoogleGenAI>[0] = { apiKey };
+const createGoogleAIClient = (apiKey: string, customApiEndpoint?: string, signal?: AbortSignal): GoogleGenAI => {
+  // Use 'any' to bypass strict type checking for 'fetch' property if it's not in the type definition
+  const clientOptions: any = { apiKey };
 
-  if (customApiEndpoint && customApiEndpoint.trim() !== '') {
-    clientOptions.fetch = async (url, init) => {
+  if ((customApiEndpoint && customApiEndpoint.trim() !== '') || signal) {
+    clientOptions.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+      // Merge signal into init options
+      const fetchInit = { ...init, signal: signal || init?.signal };
+
       try {
         const sdkUrl = new URL(url.toString());
         // sdkUrl.pathname includes the leading slash e.g. /v1beta/models/..
@@ -14,34 +19,42 @@ const createGoogleAIClient = (apiKey: string, customApiEndpoint?: string): Googl
         // sdkUrl.hash includes the leading hash
         const sdkPathAndQuery = sdkUrl.pathname + sdkUrl.search + sdkUrl.hash;
 
-        let basePath = customApiEndpoint.trim();
-        // Ensure basePath does not end with a slash
-        if (basePath.endsWith('/')) {
-          basePath = basePath.slice(0, -1);
+        let basePath = customApiEndpoint?.trim();
+
+        if (basePath) {
+             // Ensure basePath does not end with a slash
+            if (basePath.endsWith('/')) {
+              basePath = basePath.slice(0, -1);
+            }
+
+            // Robust fix for potential double versioning (e.g. /v1beta/v1beta)
+            // If the sdk path starts with a version (like /v1beta or /v1), and the custom endpoint 
+            // ends with that same version, strip it from the custom endpoint to avoid duplication.
+            const versionMatch = sdkUrl.pathname.match(/^\/(v1beta|v1)\b/);
+            if (versionMatch && basePath.endsWith(`/${versionMatch[1]}`)) {
+                 basePath = basePath.slice(0, - (`/${versionMatch[1]}`).length);
+            }
+
+            // sdkPathAndQuery already starts with '/'
+            const finalUrl = basePath + sdkPathAndQuery;
+            return fetch(finalUrl, fetchInit);
         }
-        // sdkPathAndQuery already starts with '/'
-        const finalUrl = basePath + sdkPathAndQuery;
-        return fetch(finalUrl, init);
+        
+        // If no custom endpoint, just use standard fetch with signal
+        return fetch(url, fetchInit);
+        
       } catch (e) {
         console.error(
-          "Error constructing URL with custom endpoint. Using original SDK URL.",
-          e,
-          "Original URL:", url,
-          "Custom Endpoint:", customApiEndpoint
+          "Error constructing URL with custom endpoint or fetch override. Using original URL.",
+          e
         );
-        // Fallback to original URL if custom endpoint logic fails catastrophically
-        return fetch(url, init);
+        // Fallback to original URL with signal
+        return fetch(url, fetchInit);
       }
     };
   }
   return new GoogleGenAI(clientOptions);
 };
-
-interface GeminiResponsePayload {
-  text: string;
-  durationMs: number;
-  error?: string; // Standardized error key
-}
 
 export const generateResponse = async (
   prompt: string,
@@ -51,8 +64,9 @@ export const generateResponse = async (
   customApiEndpoint?: string,
   systemInstruction?: string,
   imagePart?: { inlineData: { mimeType: string; data: string } },
-  thinkingConfig?: { thinkingBudget: number }
-): Promise<GeminiResponsePayload> => {
+  thinkingConfig?: { thinkingBudget?: number, thinkingLevel?: 'LOW' | 'HIGH' }, // Flexible type
+  signal?: AbortSignal
+): Promise<AiResponsePayload> => {
   const startTime = performance.now();
   try {
     let apiKeyToUse: string | undefined;
@@ -83,11 +97,11 @@ export const generateResponse = async (
       return { text: missingKeyUserMessage, durationMs: performance.now() - startTime, error: "API key not configured" };
     }
     
-    const genAI = createGoogleAIClient(apiKeyToUse, endpointForClient);
+    const genAI = createGoogleAIClient(apiKeyToUse, endpointForClient, signal);
 
     const configForApi: {
       systemInstruction?: string;
-      thinkingConfig?: { thinkingBudget: number };
+      thinkingConfig?: any;
     } = {};
 
     if (systemInstruction) {
@@ -106,15 +120,71 @@ export const generateResponse = async (
       requestContents = prompt;
     }
 
-    const response: GenerateContentResponse = await genAI.models.generateContent({
+    // Wrap the SDK call in a Promise that races against the AbortSignal.
+    // This ensures that even if the SDK ignores the signal (or fetch isn't wired correctly),
+    // the application flow halts immediately upon user cancellation.
+    const generatePromise = genAI.models.generateContent({
       model: modelName,
       contents: requestContents,
       config: Object.keys(configForApi).length > 0 ? configForApi : undefined,
     });
 
+    const response: GenerateContentResponse = await new Promise<GenerateContentResponse>((resolve, reject) => {
+        // If already aborted, reject immediately
+        if (signal?.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+        }
+
+        const onAbort = () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+        };
+
+        if (signal) {
+            signal.addEventListener('abort', onAbort);
+        }
+
+        generatePromise.then(
+            (res) => {
+                if (signal) signal.removeEventListener('abort', onAbort);
+                resolve(res);
+            },
+            (err) => {
+                if (signal) signal.removeEventListener('abort', onAbort);
+                reject(err);
+            }
+        );
+    });
+
+    // Extract text and thoughts
+    let text = '';
+    let thoughts = '';
+
+    if (response.candidates && response.candidates[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
+        // Check for 'thought' property (Gemini 2.5/3.0)
+        // Note: The SDK types might vary, casting to any for checking the property is safer for now
+        if ((part as any).thought) {
+          thoughts += part.text;
+        } else {
+          text += part.text || '';
+        }
+      }
+    }
+    
+    // Fallback: If parts didn't construct text (unlikely if iteration logic is correct), check response.text
+    if (!text && !thoughts && response.text) {
+      text = response.text;
+    }
+
     const durationMs = performance.now() - startTime;
-    return { text: response.text, durationMs };
+    return { text, thoughts: thoughts || undefined, durationMs };
   } catch (error) {
+    // Check for AbortError from fetch or our wrapper
+    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
+       return { text: "用户取消操作", durationMs: performance.now() - startTime, error: "AbortError" };
+    }
+
     console.error("调用Gemini API时出错:", error);
     const durationMs = performance.now() - startTime;
     let errorMessage = "与AI通信时发生未知错误。";

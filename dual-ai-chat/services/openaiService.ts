@@ -1,10 +1,5 @@
 
-// Loosely based on GeminiResponsePayload for now
-interface OpenAiResponsePayload {
-  text: string;
-  durationMs: number;
-  error?: string;
-}
+import { AiResponsePayload } from "../types";
 
 interface OpenAiMessageContentPartText {
   type: 'text';
@@ -31,8 +26,9 @@ export const generateOpenAiResponse = async (
   apiKey: string,
   baseUrl: string,
   systemInstruction?: string,
-  imagePart?: { mimeType: string; data: string } // Base64 data and mimeType
-): Promise<OpenAiResponsePayload> => {
+  imagePart?: { mimeType: string; data: string }, // Base64 data and mimeType
+  signal?: AbortSignal
+): Promise<AiResponsePayload> => {
   const startTime = performance.now();
   const messages: OpenAiChatMessage[] = [];
 
@@ -65,6 +61,11 @@ export const generateOpenAiResponse = async (
   };
 
   try {
+    // Check if already aborted before fetching
+    if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -72,6 +73,7 @@ export const generateOpenAiResponse = async (
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
+      signal,
     });
 
     const durationMs = performance.now() - startTime;
@@ -108,6 +110,11 @@ export const generateOpenAiResponse = async (
     return { text: data.choices[0].message.content, durationMs };
 
   } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('Aborted'))) {
+      const durationMs = performance.now() - startTime;
+      return { text: "用户取消操作", durationMs, error: "AbortError" };
+    }
+
     console.error("调用OpenAI API时出错:", error);
     const durationMs = performance.now() - startTime;
     let errorMessage = "与AI通信时发生未知错误。";
