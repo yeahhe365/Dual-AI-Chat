@@ -1,0 +1,21 @@
+---
+name: Question
+description: Ask a focused usage or setup question
+title: "[Question]: "
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: Please consider using Discussions for open-ended help, ideas, and community examples.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to understand or accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include relevant setup details, logs, screenshots, or links.
