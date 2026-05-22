@@ -1,5 +1,9 @@
 # Dual AI Chat (双模协作智能)
 
+<p align="center">
+  <a href="./README.md">中文</a> | <a href="./README.en.md">English</a>
+</p>
+
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
